@@ -33,7 +33,10 @@ class Config:
         """
         self.dedalus_api_key = os.getenv("DEDALUS_API_KEY")
         if require_api_key and not self.dedalus_api_key:
-            print("Error: DEDALUS_API_KEY environment variable is required", file=sys.stderr)
+            print(
+                "Error: DEDALUS_API_KEY environment variable is required",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         self.host = os.getenv("HOST", "0.0.0.0")
@@ -46,6 +49,9 @@ class Config:
         self.temperature = float(os.getenv("DEFAULT_TEMPERATURE", "0.7"))
         self.timeout = float(os.getenv("REQUEST_TIMEOUT", "300"))
         self.max_retries = int(os.getenv("MAX_RETRIES", "2"))
+        self.stream_keepalive_interval = float(
+            os.getenv("STREAM_KEEPALIVE_INTERVAL", "15")
+        )
         self.MODEL_MAP = MODEL_MAP
 
     def get_model_name(self, model: str) -> str:

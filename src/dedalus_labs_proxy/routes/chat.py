@@ -1,5 +1,6 @@
 """Chat completions endpoint."""
 
+import asyncio
 import time
 import uuid
 from collections.abc import AsyncGenerator
@@ -28,6 +29,14 @@ from dedalus_labs_proxy.models.responses import (
 from dedalus_labs_proxy.services.dedalus import global_client
 
 router = APIRouter()
+
+# SSE headers to prevent buffering and keep connections alive
+SSE_HEADERS = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",  # Disable nginx buffering
+    "Transfer-Encoding": "chunked",
+}
 
 
 def _extract_delta(  # noqa: C901
@@ -244,6 +253,50 @@ def _is_google_model(model: str) -> bool:
     return model.startswith("google/") or model.startswith("gemini")
 
 
+async def _iter_with_keepalive(
+    stream: Any,
+    keepalive_interval: float,
+) -> AsyncGenerator[Any, None]:
+    """Wrap an async iterator to yield keepalive pings during long waits.
+
+    This prevents HTTP connections from being closed by proxies or clients
+    when the upstream API takes time to generate large responses (e.g., large
+    file writes via tool calls).
+
+    Args:
+        stream: The async iterator to wrap.
+        keepalive_interval: Seconds to wait before sending a keepalive ping.
+
+    Yields:
+        Items from the stream, or None to indicate a keepalive ping should be sent.
+    """
+    stream_iter = stream.__aiter__()
+    # Track the pending __anext__ task to avoid cancellation issues
+    pending_next: asyncio.Task[Any] | None = None
+
+    while True:
+        try:
+            # Create task for next item if we don't have one pending
+            if pending_next is None:
+                pending_next = asyncio.create_task(stream_iter.__anext__())
+
+            # Wait for the next chunk with a timeout, but don't cancel the task
+            try:
+                chunk = await asyncio.wait_for(
+                    asyncio.shield(pending_next),
+                    timeout=keepalive_interval,
+                )
+                pending_next = None  # Task completed, clear it
+                yield chunk
+            except TimeoutError:
+                # Task still pending - yield None to signal keepalive ping
+                yield None
+                # Continue loop to wait for the same task again
+        except StopAsyncIteration:
+            # Stream exhausted
+            break
+
+
 async def _stream_google_with_tools(
     request: ChatCompletionRequest,
     config: Any,
@@ -266,6 +319,7 @@ async def _stream_google_with_tools(
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
     created = int(time.time())
     dedalus_model = config.get_model_name(request.model)
+    keepalive_interval = config.stream_keepalive_interval
 
     logger.info(
         "Google model with tools detected, using non-streaming fallback for: %s",
@@ -294,10 +348,9 @@ async def _stream_google_with_tools(
                 "due to a bug in the Dedalus SDK. See GOOGLE_TOOL_CALLING_BUG.md"
             )
 
-        # Use SDK for the request (works for initial tool calls, fails for follow-ups)
-        dedalus_response = cast(
-            Any,
-            await global_client.runner.create_completion(
+        # Create the API call as a task so we can send keepalive pings while waiting
+        api_task = asyncio.create_task(
+            global_client.runner.create_completion(
                 model=dedalus_model,
                 messages=messages,
                 stream=False,
@@ -311,8 +364,21 @@ async def _stream_google_with_tools(
                 parallel_tool_calls=request.parallel_tool_calls,
                 reasoning_effort=request.reasoning_effort,
                 verbosity=request.verbosity,
-            ),
+            )
         )
+
+        # Send keepalive pings while waiting for the API response
+        while not api_task.done():
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(api_task), timeout=keepalive_interval
+                )
+            except TimeoutError:
+                # API call still in progress - send keepalive ping
+                yield ": ping\n\n"
+
+        # Get the result (will raise if the task failed)
+        dedalus_response = cast(Any, await api_task)
 
         response_message = dedalus_response.choices[0].message
         content = getattr(response_message, "content", None)
@@ -480,7 +546,15 @@ async def _stream_chat_completion(
             verbosity=request.verbosity,
         )
 
-        async for chunk in stream:
+        # Wrap stream with keepalive to prevent connection drops during large responses
+        keepalive_interval = config.stream_keepalive_interval
+        async for chunk in _iter_with_keepalive(stream, keepalive_interval):
+            # None signals a keepalive ping (no data received within interval)
+            if chunk is None:
+                # SSE comment - ignored by clients but keeps connection alive
+                yield ": ping\n\n"
+                continue
+
             role, delta_content, tool_calls, finish_reason = _extract_delta(chunk)
 
             delta = ChatCompletionChunkDelta(
@@ -612,6 +686,7 @@ async def chat_completions(
         return StreamingResponse(
             _stream_chat_completion(request),
             media_type="text/event-stream",
+            headers=SSE_HEADERS,
         )
 
     dedalus_model = config.get_model_name(request.model)

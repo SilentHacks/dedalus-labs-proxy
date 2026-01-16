@@ -132,6 +132,24 @@ dedalus-proxy
 
 3. Try a faster model like `gpt-4o-mini` or `claude-3-haiku`.
 
+### Large File Writes Failing or Stalling
+
+**Symptom**: When asking the model to write large files, the response gets stuck or the connection drops.
+
+**Solution**: 
+
+The proxy includes automatic keepalive pings to prevent connection timeouts during long-running responses. If you're still experiencing issues:
+
+1. Increase the keepalive interval if your network has strict timeout requirements:
+   ```bash
+   STREAM_KEEPALIVE_INTERVAL=10 dedalus-proxy
+   ```
+   The default is 15 seconds. Lower values send more frequent pings.
+
+2. If using a reverse proxy (nginx, Cloudflare, etc.), ensure buffering is disabled. The proxy sends `X-Accel-Buffering: no` header, but you may need additional configuration.
+
+3. Check if your client or intermediate proxies have connection timeout settings that need adjustment.
+
 ### Viewing Logs
 
 Enable debug logging to see detailed request/response information:

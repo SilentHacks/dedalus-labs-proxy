@@ -79,10 +79,12 @@ def mock_global_client() -> MagicMock:
 @pytest.fixture
 def mock_dedalus_runner(mock_global_client: MagicMock) -> MagicMock:
     """Fixture that patches the global client."""
+
     async def mock_create_completion(*args: Any, **kwargs: Any) -> Any:
         stream = kwargs.get("stream", False)
 
         if stream:
+
             async def stream_gen() -> AsyncGenerator[MockResponse, None]:
                 # First chunk with role
                 response = MockResponse("Hello ", "")
@@ -285,3 +287,46 @@ async def test_multiple_messages_in_chat_completions(
     }
     response = await async_client.post("/v1/chat/completions", json=payload)
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_streaming_response_has_sse_headers(async_client: AsyncClient) -> None:
+    """Test that streaming responses include proper SSE headers to prevent buffering."""
+    payload = {
+        "model": "gpt-4",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "stream": True,
+    }
+    response = await async_client.post("/v1/chat/completions", json=payload)
+    assert response.status_code == 200
+
+    # Check for SSE-specific headers that prevent buffering
+    assert (
+        response.headers.get("cache-control") == "no-cache, no-store, must-revalidate"
+    )
+    assert response.headers.get("connection") == "keep-alive"
+    assert response.headers.get("x-accel-buffering") == "no"
+
+
+@pytest.mark.asyncio
+async def test_iter_with_keepalive_sends_ping_on_timeout() -> None:
+    """Test that _iter_with_keepalive yields None (ping signal) when stream is slow."""
+    import asyncio
+
+    from dedalus_labs_proxy.routes.chat import _iter_with_keepalive
+
+    async def slow_stream() -> AsyncGenerator[str, None]:
+        yield "first"
+        await asyncio.sleep(0.3)  # Longer than keepalive interval
+        yield "second"
+
+    # Use a very short keepalive interval for testing
+    results = []
+    async for item in _iter_with_keepalive(slow_stream(), keepalive_interval=0.1):
+        results.append(item)
+
+    # Should have: "first", None (ping), None (ping), "second"
+    # (at least one None ping during the 0.3s wait with 0.1s interval)
+    assert "first" in results
+    assert "second" in results
+    assert None in results  # At least one keepalive ping was sent

@@ -56,6 +56,15 @@ The server runs on `http://localhost:8000` by default.
 --json-logs        Output logs in JSON format
 ```
 
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEDALUS_API_KEY` | (required) | Your Dedalus Labs API key |
+| `REQUEST_TIMEOUT` | `300` | Request timeout in seconds |
+| `MAX_RETRIES` | `2` | Maximum retry attempts for failed requests |
+| `STREAM_KEEPALIVE_INTERVAL` | `15` | Seconds between keepalive pings during streaming |
+
 ### Example Request
 
 ```bash
