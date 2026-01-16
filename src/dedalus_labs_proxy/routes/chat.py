@@ -548,14 +548,54 @@ async def _stream_chat_completion(
 
         # Wrap stream with keepalive to prevent connection drops during large responses
         keepalive_interval = config.stream_keepalive_interval
+        chunk_count = 0
+        tool_call_args_size: dict[int, int] = {}  # Track accumulated size per tool call
+        final_finish_reason = None
+
         async for chunk in _iter_with_keepalive(stream, keepalive_interval):
             # None signals a keepalive ping (no data received within interval)
             if chunk is None:
                 # SSE comment - ignored by clients but keeps connection alive
+                logger.debug("Sending keepalive ping (chunk %d)", chunk_count)
                 yield ": ping\n\n"
                 continue
 
+            chunk_count += 1
             role, delta_content, tool_calls, finish_reason = _extract_delta(chunk)
+
+            # Track tool call argument sizes for debugging
+            if tool_calls:
+                for tc in tool_calls:
+                    if tc.function and tc.function.get("arguments"):
+                        args_chunk = tc.function["arguments"]
+                        idx = tc.index
+                        tool_call_args_size[idx] = tool_call_args_size.get(
+                            idx, 0
+                        ) + len(args_chunk)
+                        if chunk_count <= 5 or chunk_count % 100 == 0:
+                            logger.debug(
+                                "Tool call[%d] args chunk: +%d bytes (total: %d)",
+                                idx,
+                                len(args_chunk),
+                                tool_call_args_size[idx],
+                            )
+
+            if finish_reason:
+                final_finish_reason = finish_reason
+                if finish_reason == "length":
+                    logger.warning(
+                        "Stream TRUNCATED (finish_reason=length) after %d chunks, "
+                        "tool_call_sizes=%s - response exceeded max_tokens limit!",
+                        chunk_count,
+                        tool_call_args_size,
+                    )
+                else:
+                    logger.info(
+                        "Stream finish_reason=%s after %d chunks, tool_call_sizes=%s",
+                        finish_reason,
+                        chunk_count,
+                        tool_call_args_size,
+                    )
 
             delta = ChatCompletionChunkDelta(
                 role=role,
@@ -577,6 +617,14 @@ async def _stream_chat_completion(
             )
 
             yield f"data: {sse_chunk.model_dump_json(exclude_none=True)}\n\n"
+
+        # Log summary if we didn't see a finish_reason (abnormal termination)
+        if final_finish_reason is None:
+            logger.warning(
+                "Stream ended without finish_reason after %d chunks, tool_call_sizes=%s",
+                chunk_count,
+                tool_call_args_size,
+            )
 
         yield "data: [DONE]\n\n"
 

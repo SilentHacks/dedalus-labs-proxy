@@ -75,8 +75,14 @@ class DedalusRunner:
             effective_max_tokens = max_tokens
         elif tools is not None:
             # Set default max_tokens for tool-enabled requests
-            effective_max_tokens = 16384
-            logger.info("Setting max_tokens=16384 for tool-enabled request")
+            # Use a high default to support large file writes
+            from dedalus_labs_proxy.config import get_config
+
+            config = get_config()
+            effective_max_tokens = config.tool_max_tokens
+            logger.info(
+                "Setting max_tokens=%d for tool-enabled request", effective_max_tokens
+            )
 
         if effective_max_tokens is not None:
             if model.startswith("openai/"):

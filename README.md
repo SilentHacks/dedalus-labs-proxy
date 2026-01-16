@@ -64,6 +64,7 @@ The server runs on `http://localhost:8000` by default.
 | `REQUEST_TIMEOUT` | `300` | Request timeout in seconds |
 | `MAX_RETRIES` | `2` | Maximum retry attempts for failed requests |
 | `STREAM_KEEPALIVE_INTERVAL` | `15` | Seconds between keepalive pings during streaming |
+| `TOOL_MAX_TOKENS` | `128000` | Default max tokens for tool-enabled requests |
 
 ### Example Request
 

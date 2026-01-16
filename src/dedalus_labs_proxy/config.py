@@ -52,6 +52,8 @@ class Config:
         self.stream_keepalive_interval = float(
             os.getenv("STREAM_KEEPALIVE_INTERVAL", "15")
         )
+        # Default max tokens for tool-enabled requests (large to support file writes)
+        self.tool_max_tokens = int(os.getenv("TOOL_MAX_TOKENS", "128000"))
         self.MODEL_MAP = MODEL_MAP
 
     def get_model_name(self, model: str) -> str:
