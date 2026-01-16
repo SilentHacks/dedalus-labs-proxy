@@ -128,6 +128,297 @@ def _serialize_tool_choice(
     return tool_choice.model_dump()
 
 
+def _sanitize_tool_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Remove or transform fields from tool schema for Google API compatibility.
+
+    Google's API rejects schemas with $schema, additionalProperties, and other
+    JSON Schema draft fields that OpenAI accepts. It also has issues with
+    numeric constraint fields (like maxLength) - the Dedalus SDK may coerce
+    string values back to integers, so we remove these fields entirely.
+
+    Args:
+        schema: The schema dict to sanitize.
+
+    Returns:
+        Sanitized schema dict.
+    """
+    # JSON Schema keywords that Google API doesn't accept
+    # These are schema-level keywords, NOT property names
+    disallowed_schema_keywords = {
+        "$schema",
+        "additionalProperties",
+        # Numeric constraints that cause issues with Google API via Dedalus SDK
+        "maxLength",
+        "minLength",
+        "maxItems",
+        "minItems",
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+    }
+
+    def _clean_dict(
+        d: dict[str, Any], is_properties_dict: bool = False
+    ) -> dict[str, Any]:
+        cleaned: dict[str, Any] = {}
+        for key, value in d.items():
+            # Only skip disallowed keywords when NOT inside a "properties" dict
+            # This ensures we don't accidentally remove user-defined property names
+            # that happen to match JSON Schema keywords
+            if not is_properties_dict and key in disallowed_schema_keywords:
+                continue
+            if isinstance(value, dict):
+                # If this key is "properties", mark the next level as a properties dict
+                cleaned[key] = _clean_dict(
+                    value, is_properties_dict=(key == "properties")
+                )
+            elif isinstance(value, list):
+                cleaned_list: list[Any] = []
+                for item in value:
+                    if isinstance(item, dict):
+                        cleaned_list.append(_clean_dict(item, is_properties_dict=False))
+                    else:
+                        cleaned_list.append(item)
+                cleaned[key] = cleaned_list
+            else:
+                cleaned[key] = value
+        return cleaned
+
+    return _clean_dict(schema)
+
+
+def _sanitize_tools_for_google(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sanitize tool definitions for Google API compatibility.
+
+    Args:
+        tools: List of tool definitions.
+
+    Returns:
+        Sanitized tool definitions.
+    """
+    sanitized = []
+    for tool in tools:
+        tool_copy = tool.copy()
+        if "function" in tool_copy and "parameters" in tool_copy["function"]:
+            tool_copy["function"] = tool_copy["function"].copy()
+            original_params = tool_copy["function"]["parameters"]
+            sanitized_params = _sanitize_tool_schema(original_params)
+            tool_copy["function"]["parameters"] = sanitized_params
+            # Debug: log if we found any maxLength fields
+            logger.debug(
+                "Sanitized tool %s parameters",
+                tool_copy["function"].get("name", "unknown"),
+            )
+        sanitized.append(tool_copy)
+    return sanitized
+
+
+def _has_tool_call_history(messages: list[dict[str, Any]]) -> bool:
+    """Check if messages contain tool call history.
+
+    Args:
+        messages: List of message dicts.
+
+    Returns:
+        True if any message has tool_calls or is a tool result.
+    """
+    for msg in messages:
+        if msg.get("tool_calls"):
+            return True
+        if msg.get("role") == "tool":
+            return True
+    return False
+
+
+def _is_google_model(model: str) -> bool:
+    """Check if a model is a Google model.
+
+    Args:
+        model: The model name or identifier.
+
+    Returns:
+        True if the model is a Google model.
+    """
+    return model.startswith("google/") or model.startswith("gemini")
+
+
+async def _stream_google_with_tools(
+    request: ChatCompletionRequest,
+    config: Any,
+) -> AsyncGenerator[str, None]:
+    """Handle streaming for Google models with tools by falling back to non-streaming.
+
+    Google models via Dedalus API don't properly support streaming with function calling.
+    This workaround makes a non-streaming request and simulates streaming output.
+
+    KNOWN LIMITATION: Multi-turn tool conversations with Google models will fail.
+    See the module docstring and GOOGLE_TOOL_CALLING_BUG.md for details.
+
+    Args:
+        request: The chat completion request.
+        config: The application configuration.
+
+    Yields:
+        SSE-formatted chunks that simulate streaming.
+    """
+    completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
+    created = int(time.time())
+    dedalus_model = config.get_model_name(request.model)
+
+    logger.info(
+        "Google model with tools detected, using non-streaming fallback for: %s",
+        dedalus_model,
+    )
+
+    try:
+        messages = [msg.model_dump(exclude_none=True) for msg in request.messages]
+
+        tools = (
+            [tool.model_dump(exclude_none=True) for tool in request.tools]
+            if request.tools
+            else None
+        )
+
+        # Sanitize tools for Google API compatibility
+        if tools:
+            logger.debug("Sanitizing %d tools for Google API", len(tools))
+            tools = _sanitize_tools_for_google(tools)
+
+        # Check if we have tool call history - this is a known broken case
+        if _has_tool_call_history(messages):
+            logger.warning(
+                "Tool call history detected for Google model. "
+                "This is a known limitation - multi-turn tool conversations fail "
+                "due to a bug in the Dedalus SDK. See GOOGLE_TOOL_CALLING_BUG.md"
+            )
+
+        # Use SDK for the request (works for initial tool calls, fails for follow-ups)
+        dedalus_response = cast(
+            Any,
+            await global_client.runner.create_completion(
+                model=dedalus_model,
+                messages=messages,
+                stream=False,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                max_completion_tokens=request.max_completion_tokens,
+                top_p=request.top_p,
+                stop=request.stop,
+                tools=tools,
+                tool_choice=_serialize_tool_choice(request.tool_choice),
+                parallel_tool_calls=request.parallel_tool_calls,
+                reasoning_effort=request.reasoning_effort,
+                verbosity=request.verbosity,
+            ),
+        )
+
+        response_message = dedalus_response.choices[0].message
+        content = getattr(response_message, "content", None)
+        finish_reason = (
+            str(dedalus_response.choices[0].finish_reason)
+            if dedalus_response.choices[0].finish_reason
+            else "stop"
+        )
+
+        # Extract tool calls if present
+        tool_call_deltas = None
+        if hasattr(response_message, "tool_calls") and response_message.tool_calls:
+            tool_call_deltas = []
+            for idx, tc in enumerate(response_message.tool_calls):
+                tool_call_deltas.append(
+                    ToolCallDelta(
+                        index=idx,
+                        id=tc.id,
+                        type=tc.type if hasattr(tc, "type") else "function",
+                        function={
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    )
+                )
+
+        # Simulate streaming: first chunk with role
+        first_chunk = ChatCompletionChunk(
+            id=completion_id,
+            created=created,
+            model=request.model,
+            choices=[
+                ChatCompletionChunkChoice(
+                    index=0,
+                    delta=ChatCompletionChunkDelta(role="assistant"),
+                    finish_reason=None,
+                )
+            ],
+        )
+        yield f"data: {first_chunk.model_dump_json(exclude_none=True)}\n\n"
+
+        # Second chunk with content and/or tool calls
+        if content or tool_call_deltas:
+            content_chunk = ChatCompletionChunk(
+                id=completion_id,
+                created=created,
+                model=request.model,
+                choices=[
+                    ChatCompletionChunkChoice(
+                        index=0,
+                        delta=ChatCompletionChunkDelta(
+                            content=content,
+                            tool_calls=tool_call_deltas,
+                        ),
+                        finish_reason=None,
+                    )
+                ],
+            )
+            yield f"data: {content_chunk.model_dump_json(exclude_none=True)}\n\n"
+
+        # Final chunk with finish_reason
+        final_chunk = ChatCompletionChunk(
+            id=completion_id,
+            created=created,
+            model=request.model,
+            choices=[
+                ChatCompletionChunkChoice(
+                    index=0,
+                    delta=ChatCompletionChunkDelta(),
+                    finish_reason=finish_reason,
+                )
+            ],
+        )
+        yield f"data: {final_chunk.model_dump_json(exclude_none=True)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    except dedalus_labs.AuthenticationError:
+        logger.error(
+            "Authentication failed during Google streaming fallback: %s", request.model
+        )
+        error_data = {"error": {"message": "Authentication failed: Invalid API key"}}
+        yield f"data: {orjson.dumps(error_data).decode()}\n\n"
+    except dedalus_labs.APITimeoutError as e:
+        logger.error("Request timed out during Google streaming fallback: %s", str(e))
+        error_data = {
+            "error": {
+                "message": "Request timed out. Try reducing the complexity of your query."
+            }
+        }
+        yield f"data: {orjson.dumps(error_data).decode()}\n\n"
+    except dedalus_labs.APIConnectionError as e:
+        logger.error("Connection failed during Google streaming fallback: %s", str(e))
+        error_data = {
+            "error": {"message": f"Failed to connect to Dedalus API: {str(e)}"}
+        }
+        yield f"data: {orjson.dumps(error_data).decode()}\n\n"
+    except dedalus_labs.APIStatusError as e:
+        logger.error(
+            "API error during Google streaming fallback (status %d): %s",
+            e.status_code,
+            e.message,
+        )
+        error_data = {"error": {"message": e.message, "code": str(e.status_code)}}
+        yield f"data: {orjson.dumps(error_data).decode()}\n\n"
+
+
 async def _stream_chat_completion(
     request: ChatCompletionRequest,
 ) -> AsyncGenerator[str, None]:
@@ -145,6 +436,15 @@ async def _stream_chat_completion(
         logger.warning("Invalid model requested: %s", request.model)
         error_data = {"error": {"message": f"Model '{request.model}' not supported"}}
         yield f"data: {orjson.dumps(error_data).decode()}\n\n"
+        return
+
+    dedalus_model = config.get_model_name(request.model)
+
+    # Workaround: Google models don't support streaming with tools via Dedalus API
+    # Fall back to non-streaming and simulate streaming response
+    if _is_google_model(dedalus_model) and request.tools:
+        async for chunk in _stream_google_with_tools(request, config):
+            yield chunk
         return
 
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
@@ -165,7 +465,7 @@ async def _stream_chat_completion(
             )
 
         stream = await global_client.runner.create_completion(
-            model=config.get_model_name(request.model),
+            model=dedalus_model,
             messages=messages,
             stream=True,
             temperature=request.temperature,
@@ -215,7 +515,9 @@ async def _stream_chat_completion(
     except dedalus_labs.APITimeoutError as e:
         logger.error("Request timed out during streaming: %s", str(e))
         error_data = {
-            "error": {"message": "Request timed out. Try reducing the complexity of your query."}
+            "error": {
+                "message": "Request timed out. Try reducing the complexity of your query."
+            }
         }
         yield f"data: {orjson.dumps(error_data).decode()}\n\n"
     except dedalus_labs.APIConnectionError as e:
@@ -322,11 +624,23 @@ async def chat_completions(
     try:
         messages = [msg.model_dump(exclude_none=True) for msg in request.messages]
 
+        # Check for known Google tool call limitation
+        if _is_google_model(dedalus_model) and _has_tool_call_history(messages):
+            logger.warning(
+                "Tool call history detected for Google model. "
+                "This is a known limitation - multi-turn tool conversations fail "
+                "due to a bug in the Dedalus SDK. See GOOGLE_TOOL_CALLING_BUG.md"
+            )
+
         tools = (
             [tool.model_dump(exclude_none=True) for tool in request.tools]
             if request.tools
             else None
         )
+
+        # Sanitize tools for Google API compatibility
+        if tools and _is_google_model(dedalus_model):
+            tools = _sanitize_tools_for_google(tools)
 
         dedalus_response = cast(
             Any,
