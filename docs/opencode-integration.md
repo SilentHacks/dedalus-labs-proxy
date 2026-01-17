@@ -77,9 +77,6 @@ Other models may or may not work.
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DEDALUS_API_KEY` | Yes | Your Dedalus Labs API key (for the proxy) |
-| `OPENAI_API_KEY` | Yes* | Required by opencode/client (can be any dummy value like `dummy`); the proxy ignores it |
-
-*opencode requires an API key environment variable to be set, even though the proxy doesn't use it.
 
 ## Model Names
 
