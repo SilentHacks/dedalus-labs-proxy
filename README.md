@@ -106,11 +106,23 @@ Interactive API documentation is available at `/docs` when the server is running
 
 Pass model names directly as expected by the Dedalus Labs API. Examples:
 
-- `openai/gpt-4o`, `openai/gpt-4o-mini`, `openai/gpt-4-turbo`
-- `anthropic/claude-3-opus`, `anthropic/claude-3-sonnet`, `anthropic/claude-3-haiku`
-- `google/gemini-1.5-pro`, `google/gemini-1.5-flash`
+- `openai/gpt-5.2`, `openai/gpt-4.1`, `openai/gpt-4o`
+- `anthropic/claude-opus-4-5`, `anthropic/claude-sonnet-4-5`
+- `google/gemini-3-pro-preview`, `google/gemini-2.5-pro`
 
 See Dedalus Labs documentation for the full list of available models.
+
+### Tested with opencode
+
+The following models have been verified to work with [opencode](https://opencode.ai):
+
+| Model | Status |
+|-------|--------|
+| `anthropic/claude-opus-4-5` | Working |
+| `openai/gpt-5.2` | Working |
+| `google/gemini-3-pro-preview` | Partial - [known issues with multi-turn tool calling](docs/GOOGLE_TOOL_CALLING_BUG.md) |
+
+Other models may or may not work. See the [opencode integration guide](docs/opencode-integration.md) for configuration details.
 
 ## Documentation
 

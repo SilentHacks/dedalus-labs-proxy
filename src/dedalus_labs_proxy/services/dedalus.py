@@ -154,7 +154,7 @@ class DedalusClient:
             APIConnectionError: If connection fails.
         """
         await self.client.chat.completions.create(  # type: ignore[call-overload]
-            model="openai/gpt-4o-mini",
+            model="openai/gpt-5-mini",
             messages=[{"role": "user", "content": "test"}],
             max_tokens=1,
         )

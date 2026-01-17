@@ -2,13 +2,25 @@
 
 This guide explains how to configure [opencode](https://opencode.ai) to use Dedalus Labs models through this proxy.
 
+## Tested Models
+
+The following models have been verified to work with opencode:
+
+| Model | Status |
+|-------|--------|
+| `anthropic/claude-opus-4-5` | Working |
+| `openai/gpt-5.2` | Working |
+| `google/gemini-3-pro-preview` | Partial - [known issues with multi-turn tool calling](GOOGLE_TOOL_CALLING_BUG.md) |
+
+Other models may or may not work.
+
 ## Quick Setup
 
 1. **Start the proxy server**
 
    ```bash
    export DEDALUS_API_KEY=your-api-key
-   dedalus-proxy
+   dedalus-proxy --host 0.0.0.0
    ```
 
 2. **Configure opencode**
@@ -18,20 +30,39 @@ This guide explains how to configure [opencode](https://opencode.ai) to use Deda
    ```json
    {
      "provider": {
-       "dedalus": {
-         "name": "Dedalus Labs",
-         "api_key_env": "OPENAI_API_KEY",
-         "base_url": "http://localhost:8000/v1"
-       }
-     },
-     "model": {
-       "editor": {
-         "provider": "dedalus",
-         "model": "openai/gpt-4o"
-       },
-       "small": {
-         "provider": "dedalus",
-         "model": "openai/gpt-4o-mini"
+       "dedalus-labs": {
+         "npm": "@ai-sdk/openai-compatible",
+         "name": "dedalus-labs",
+         "options": {
+           "name": "dedalus-labs",
+           "baseURL": "http://localhost:8000/v1"
+         },
+         "models": {
+           "openai/gpt-5.2": {
+             "name": "GPT-5.2",
+             "variants": {
+               "xhigh": {
+                 "reasoningEffort": "xhigh",
+                 "textVerbosity": "low"
+               },
+               "high": {
+                 "reasoningEffort": "high",
+                 "textVerbosity": "low"
+               },
+               "medium": {
+                 "reasoningEffort": "medium",
+                 "textVerbosity": "low"
+               },
+               "low": {
+                 "reasoningEffort": "low",
+                 "textVerbosity": "low"
+               }
+             }
+           },
+           "anthropic/claude-opus-4-5": {
+             "name": "Claude Opus 4.5"
+           }
+         }
        }
      }
    }
@@ -56,15 +87,13 @@ Pass model names directly as expected by the Dedalus Labs API. Examples:
 
 | Model | Provider |
 |-------|----------|
+| `openai/gpt-5.2` | OpenAI |
+| `openai/gpt-4.1` | OpenAI |
 | `openai/gpt-4o` | OpenAI |
-| `openai/gpt-4o-mini` | OpenAI |
-| `openai/gpt-4-turbo` | OpenAI |
-| `openai/gpt-4` | OpenAI |
-| `anthropic/claude-3-opus` | Anthropic |
-| `anthropic/claude-3-sonnet` | Anthropic |
-| `anthropic/claude-3-haiku` | Anthropic |
-| `google/gemini-1.5-pro` | Google |
-| `google/gemini-1.5-flash` | Google |
+| `anthropic/claude-opus-4-5` | Anthropic |
+| `anthropic/claude-sonnet-4-5` | Anthropic |
+| `google/gemini-3-pro-preview` | Google |
+| `google/gemini-2.5-pro` | Google |
 
 See Dedalus Labs documentation for the full list of available models.
 
@@ -123,7 +152,7 @@ dedalus-proxy
 
 2. Check your network connection to Dedalus Labs API.
 
-3. Try a faster model like `openai/gpt-4o-mini` or `anthropic/claude-3-haiku`.
+3. Try a faster model like `openai/gpt-5-mini` or `anthropic/claude-haiku-4-5`.
 
 ### Large File Writes Failing or Stalling
 

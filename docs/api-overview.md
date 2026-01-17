@@ -123,7 +123,7 @@ When `stream: false` (default):
   "id": "chatcmpl-abc123",
   "object": "chat.completion",
   "created": 1704067200,
-  "model": "claude-sonnet-4-20250514",
+  "model": "claude-sonnet-4-5",
   "choices": [
     {
       "index": 0,
@@ -149,13 +149,13 @@ When `stream: true`, the endpoint returns Server-Sent Events (SSE) with `Content
 Each event is prefixed with `data: ` followed by a JSON chunk:
 
 ```
-data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1704067200,"model":"claude-sonnet-4-20250514","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1704067200,"model":"claude-sonnet-4-5","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1704067200,"model":"claude-sonnet-4-20250514","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1704067200,"model":"claude-sonnet-4-5","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1704067200,"model":"claude-sonnet-4-20250514","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":null}]}
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1704067200,"model":"claude-sonnet-4-5","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1704067200,"model":"claude-sonnet-4-20250514","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1704067200,"model":"claude-sonnet-4-5","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
 
 data: [DONE]
 ```
@@ -171,7 +171,7 @@ The proxy supports function/tool calling. Define tools in your request:
 
 ```json
 {
-  "model": "claude-sonnet-4-20250514",
+  "model": "claude-sonnet-4-5",
   "messages": [{"role": "user", "content": "What's the weather in Paris?"}],
   "tools": [
     {
@@ -260,7 +260,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="claude-sonnet-4-20250514",
+    model="claude-sonnet-4-5",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 
@@ -271,7 +271,7 @@ For streaming:
 
 ```python
 stream = client.chat.completions.create(
-    model="claude-sonnet-4-20250514",
+    model="claude-sonnet-4-5",
     messages=[{"role": "user", "content": "Hello!"}],
     stream=True
 )
@@ -288,7 +288,7 @@ for chunk in stream:
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "claude-sonnet-4-20250514",
+    "model": "claude-sonnet-4-5",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
@@ -298,7 +298,7 @@ curl http://localhost:8000/v1/chat/completions \
 curl -N http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "claude-sonnet-4-20250514",
+    "model": "claude-sonnet-4-5",
     "messages": [{"role": "user", "content": "Hello!"}],
     "stream": true
   }'

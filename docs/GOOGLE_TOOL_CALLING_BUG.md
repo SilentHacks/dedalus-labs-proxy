@@ -1,5 +1,9 @@
 # Google Models Tool Calling Bug
 
+## Status
+
+This issue affects `google/gemini-3-pro-preview` and other Google models when used with opencode or other agentic tools that require multi-turn tool calling.
+
 ## Summary
 
 **Multi-turn tool calling conversations with Google models (e.g., `google/gemini-3-pro-preview`) are broken** when using the Dedalus SDK/API. The first tool call works, but subsequent turns that include tool call history in the messages fail with a validation error.
