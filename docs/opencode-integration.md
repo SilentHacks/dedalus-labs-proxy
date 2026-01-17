@@ -27,11 +27,11 @@ This guide explains how to configure [opencode](https://opencode.ai) to use Deda
      "model": {
        "editor": {
          "provider": "dedalus",
-         "model": "gpt-4o"
+         "model": "openai/gpt-4o"
        },
        "small": {
          "provider": "dedalus",
-         "model": "gpt-4o-mini"
+         "model": "openai/gpt-4o-mini"
        }
      }
    }
@@ -50,24 +50,23 @@ This guide explains how to configure [opencode](https://opencode.ai) to use Deda
 
 *opencode requires an API key environment variable to be set, even though the proxy doesn't use it.
 
-## Available Models
+## Model Names
 
-Use these model names in your opencode configuration:
+Pass model names directly as expected by the Dedalus Labs API. Examples:
 
 | Model | Provider |
 |-------|----------|
-| `gpt-4o` | OpenAI |
-| `gpt-4o-mini` | OpenAI |
-| `gpt-4-turbo` | OpenAI |
-| `gpt-4` | OpenAI |
-| `gpt-3.5-turbo` | OpenAI |
-| `claude-3-opus` | Anthropic |
-| `claude-3-sonnet` | Anthropic |
-| `claude-3-haiku` | Anthropic |
-| `gemini-1.5-pro` | Google |
-| `gemini-1.5-flash` | Google |
+| `openai/gpt-4o` | OpenAI |
+| `openai/gpt-4o-mini` | OpenAI |
+| `openai/gpt-4-turbo` | OpenAI |
+| `openai/gpt-4` | OpenAI |
+| `anthropic/claude-3-opus` | Anthropic |
+| `anthropic/claude-3-sonnet` | Anthropic |
+| `anthropic/claude-3-haiku` | Anthropic |
+| `google/gemini-1.5-pro` | Google |
+| `google/gemini-1.5-flash` | Google |
 
-You can also use full model paths like `openai/gpt-4o` or `anthropic/claude-3-sonnet`.
+See Dedalus Labs documentation for the full list of available models.
 
 ## Troubleshooting
 
@@ -107,13 +106,7 @@ dedalus-proxy
 
 **Symptom**: Error about invalid or unavailable model.
 
-**Solution**: Use one of the supported model names listed above, or use the full Dedalus model path:
-
-```json
-{
-  "model": "openai/gpt-4o"
-}
-```
+**Solution**: Use the full Dedalus model path (e.g., `openai/gpt-4o`). See the Dedalus Labs documentation for available models.
 
 ### Slow Responses
 
@@ -130,7 +123,7 @@ dedalus-proxy
 
 2. Check your network connection to Dedalus Labs API.
 
-3. Try a faster model like `gpt-4o-mini` or `claude-3-haiku`.
+3. Try a faster model like `openai/gpt-4o-mini` or `anthropic/claude-3-haiku`.
 
 ### Large File Writes Failing or Stalling
 

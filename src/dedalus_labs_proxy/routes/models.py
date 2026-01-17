@@ -4,7 +4,6 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from dedalus_labs_proxy.config import get_config
 from dedalus_labs_proxy.logging import logger
 
 router = APIRouter()
@@ -14,19 +13,13 @@ router = APIRouter()
 async def list_models() -> dict[str, Any]:
     """List available models.
 
+    Returns an empty list. Users should pass model names directly as expected
+    by the Dedalus Labs API (e.g., 'openai/gpt-4o', 'anthropic/claude-3-sonnet').
+
     Returns:
-        OpenAI-compatible model list response.
+        OpenAI-compatible model list response (empty).
     """
-    logger.info("Listing available models")
-    config = get_config()
-    models = []
-    for provider_id, _dedalus_id in config.MODEL_MAP.items():
-        models.append(
-            {
-                "id": provider_id,
-                "object": "model",
-                "created": 1704067200,
-                "owned_by": "dedalus",
-            }
-        )
-    return {"object": "list", "data": models}
+    logger.info(
+        "Listing available models (no predefined list - use Dedalus model names directly)"
+    )
+    return {"object": "list", "data": []}

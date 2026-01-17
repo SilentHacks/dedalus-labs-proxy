@@ -140,7 +140,7 @@ async def async_client(
 async def test_chat_completions_non_streaming(async_client: AsyncClient) -> None:
     """Test non-streaming chat completion."""
     payload = {
-        "model": "gpt-4",
+        "model": "openai/gpt-4",
         "messages": [{"role": "user", "content": "Hello"}],
         "stream": False,
     }
@@ -150,7 +150,7 @@ async def test_chat_completions_non_streaming(async_client: AsyncClient) -> None
     data = response.json()
     assert "id" in data
     assert data["object"] == "chat.completion"
-    assert data["model"] == "gpt-4"
+    assert data["model"] == "openai/gpt-4"
     assert len(data["choices"]) > 0
     assert "message" in data["choices"][0]
     assert data["choices"][0]["message"]["role"] == "assistant"
@@ -161,7 +161,7 @@ async def test_chat_completions_non_streaming(async_client: AsyncClient) -> None
 async def test_chat_completions_with_temperature(async_client: AsyncClient) -> None:
     """Test chat completion with temperature parameter."""
     payload = {
-        "model": "gpt-4",
+        "model": "openai/gpt-4",
         "messages": [{"role": "user", "content": "Hello"}],
         "temperature": 0.7,
     }
@@ -173,7 +173,7 @@ async def test_chat_completions_with_temperature(async_client: AsyncClient) -> N
 async def test_chat_completions_with_max_tokens(async_client: AsyncClient) -> None:
     """Test chat completion with max_tokens parameter."""
     payload = {
-        "model": "gpt-4",
+        "model": "openai/gpt-4",
         "messages": [{"role": "user", "content": "Hello"}],
         "max_tokens": 100,
     }
@@ -185,7 +185,7 @@ async def test_chat_completions_with_max_tokens(async_client: AsyncClient) -> No
 async def test_chat_completions_with_top_p(async_client: AsyncClient) -> None:
     """Test chat completion with top_p parameter."""
     payload = {
-        "model": "gpt-4",
+        "model": "openai/gpt-4",
         "messages": [{"role": "user", "content": "Hello"}],
         "top_p": 0.9,
     }
@@ -196,7 +196,12 @@ async def test_chat_completions_with_top_p(async_client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_chat_completions_different_models(async_client: AsyncClient) -> None:
     """Test chat completion with different model names."""
-    for model in ["gpt-4", "gpt-4o", "claude-3-opus", "gemini-pro"]:
+    for model in [
+        "openai/gpt-4",
+        "openai/gpt-4o",
+        "anthropic/claude-3-opus",
+        "google/gemini-pro",
+    ]:
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": "Hello"}],
@@ -210,7 +215,7 @@ async def test_chat_completions_different_models(async_client: AsyncClient) -> N
 async def test_chat_completions_streaming(async_client: AsyncClient) -> None:
     """Test streaming chat completion."""
     payload = {
-        "model": "gpt-4",
+        "model": "openai/gpt-4",
         "messages": [{"role": "user", "content": "Hello"}],
         "stream": True,
     }
@@ -224,22 +229,10 @@ async def test_chat_completions_streaming(async_client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_invalid_model(async_client: AsyncClient) -> None:
-    """Test chat completion with invalid model."""
-    payload = {
-        "model": "invalid-model-x",
-        "messages": [{"role": "user", "content": "Hello"}],
-    }
-    response = await async_client.post("/v1/chat/completions", json=payload)
-    assert response.status_code == 400
-    assert "not supported" in response.json()["error"]["message"]
-
-
-@pytest.mark.asyncio
 async def test_chat_completions_missing_messages(async_client: AsyncClient) -> None:
     """Test chat completion without messages field."""
     payload = {
-        "model": "gpt-4",
+        "model": "openai/gpt-4",
     }
     response = await async_client.post("/v1/chat/completions", json=payload)
     assert response.status_code == 422
@@ -256,28 +249,12 @@ async def test_chat_completions_missing_model(async_client: AsyncClient) -> None
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_streaming_invalid_model(
-    async_client: AsyncClient,
-) -> None:
-    """Test streaming chat completion with invalid model."""
-    payload = {
-        "model": "invalid-model-x",
-        "messages": [{"role": "user", "content": "Hello"}],
-        "stream": True,
-    }
-    response = await async_client.post("/v1/chat/completions", json=payload)
-    assert response.status_code == 200
-    content = response.text
-    assert '"error"' in content
-
-
-@pytest.mark.asyncio
 async def test_multiple_messages_in_chat_completions(
     async_client: AsyncClient,
 ) -> None:
     """Test chat completion with multiple messages."""
     payload = {
-        "model": "gpt-4",
+        "model": "openai/gpt-4",
         "messages": [
             {"role": "system", "content": "You are a helpful assistant"},
             {"role": "user", "content": "Hello"},
@@ -293,7 +270,7 @@ async def test_multiple_messages_in_chat_completions(
 async def test_streaming_response_has_sse_headers(async_client: AsyncClient) -> None:
     """Test that streaming responses include proper SSE headers to prevent buffering."""
     payload = {
-        "model": "gpt-4",
+        "model": "openai/gpt-4",
         "messages": [{"role": "user", "content": "Hello"}],
         "stream": True,
     }

@@ -72,7 +72,7 @@ The server runs on `http://localhost:8000` by default.
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-4o",
+    "model": "openai/gpt-4o",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
@@ -83,7 +83,7 @@ curl http://localhost:8000/v1/chat/completions \
 curl -N http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-4o",
+    "model": "openai/gpt-4o",
     "messages": [{"role": "user", "content": "Hello!"}],
     "stream": true
   }'
@@ -102,15 +102,15 @@ Note: The `-N` flag disables buffering for real-time streaming output.
 
 Interactive API documentation is available at `/docs` when the server is running.
 
-## Supported Models
+## Model Names
 
-Models are mapped to Dedalus Labs equivalents:
+Pass model names directly as expected by the Dedalus Labs API. Examples:
 
-- `gpt-4`, `gpt-4-turbo`, `gpt-4o`, `gpt-4o-mini`, `gpt-3.5-turbo`
-- `claude-3-opus`, `claude-3-sonnet`, `claude-3-haiku`
-- `gemini-1.5-pro`, `gemini-1.5-flash`
+- `openai/gpt-4o`, `openai/gpt-4o-mini`, `openai/gpt-4-turbo`
+- `anthropic/claude-3-opus`, `anthropic/claude-3-sonnet`, `anthropic/claude-3-haiku`
+- `google/gemini-1.5-pro`, `google/gemini-1.5-flash`
 
-You can also use full model names like `openai/gpt-4o` or `anthropic/claude-3-sonnet`.
+See Dedalus Labs documentation for the full list of available models.
 
 ## Documentation
 

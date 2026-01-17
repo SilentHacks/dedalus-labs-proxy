@@ -318,7 +318,7 @@ async def _stream_google_with_tools(
     """
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
     created = int(time.time())
-    dedalus_model = config.get_model_name(request.model)
+    dedalus_model = request.model
     keepalive_interval = config.stream_keepalive_interval
 
     logger.info(
@@ -497,14 +497,7 @@ async def _stream_chat_completion(
         SSE-formatted chunks.
     """
     config = get_config()
-
-    if not config.is_valid_model(request.model):
-        logger.warning("Invalid model requested: %s", request.model)
-        error_data = {"error": {"message": f"Model '{request.model}' not supported"}}
-        yield f"data: {orjson.dumps(error_data).decode()}\n\n"
-        return
-
-    dedalus_model = config.get_model_name(request.model)
+    dedalus_model = request.model
 
     # Workaround: Google models don't support streaming with tools via Dedalus API
     # Fall back to non-streaming and simulate streaming response
@@ -697,8 +690,6 @@ async def chat_completions(
     Raises:
         HTTPException: On validation or API errors.
     """
-    config = get_config()
-
     logger.info(
         "Chat completion: model=%s, stream=%s, messages=%d, tools=%d",
         request.model,
@@ -737,12 +728,7 @@ async def chat_completions(
             headers=SSE_HEADERS,
         )
 
-    dedalus_model = config.get_model_name(request.model)
-
-    if not config.is_valid_model(request.model):
-        raise HTTPException(
-            status_code=400, detail=f"Model '{request.model}' not supported"
-        )
+    dedalus_model = request.model
 
     try:
         messages = [msg.model_dump(exclude_none=True) for msg in request.messages]

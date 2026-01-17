@@ -7,20 +7,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MODEL_MAP: dict[str, str] = {
-    "gpt-4": "openai/gpt-4",
-    "gpt-4-turbo": "openai/gpt-4-turbo",
-    "gpt-4o": "openai/gpt-4o",
-    "gpt-4o-mini": "openai/gpt-4o-mini",
-    "gpt-3.5-turbo": "openai/gpt-3.5-turbo",
-    "claude-3-opus": "anthropic/claude-3-opus",
-    "claude-3-sonnet": "anthropic/claude-3-sonnet",
-    "claude-3-haiku": "anthropic/claude-3-haiku",
-    "gemini-pro": "google/gemini-pro",
-    "gemini-1.5-pro": "google/gemini-1.5-pro",
-    "gemini-1.5-flash": "google/gemini-1.5-flash",
-}
-
 
 class Config:
     """Application configuration loaded from environment variables."""
@@ -54,33 +40,6 @@ class Config:
         )
         # Default max tokens for tool-enabled requests (large to support file writes)
         self.tool_max_tokens = int(os.getenv("TOOL_MAX_TOKENS", "128000"))
-        self.MODEL_MAP = MODEL_MAP
-
-    def get_model_name(self, model: str) -> str:
-        """Map a model alias to its Dedalus API model name.
-
-        Args:
-            model: Model name or alias.
-
-        Returns:
-            The Dedalus API model name.
-        """
-        return MODEL_MAP.get(model, model)
-
-    def is_valid_model(self, model: str) -> bool:
-        """Check if a model name is valid.
-
-        Args:
-            model: Model name to validate.
-
-        Returns:
-            True if the model is valid.
-        """
-        if model in MODEL_MAP:
-            return True
-        if "/" in model:
-            return True
-        return False
 
 
 # Global config instance - initialized lazily to allow testing

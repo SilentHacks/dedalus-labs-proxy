@@ -58,8 +58,7 @@ src/dedalus_labs_proxy/
 
 3. **Route Handler** (routes/chat.py):
    - Validates request using Pydantic models
-   - Checks if model is supported via `config.is_valid_model()`
-   - Maps model alias to Dedalus model name (e.g., `gpt-4o` → `openai/gpt-4o`)
+   - Passes model name directly to Dedalus API
 
 4. **Service Layer** (services/dedalus.py):
    - `DedalusRunner.create_completion()` translates parameters
@@ -81,7 +80,6 @@ src/dedalus_labs_proxy/
 ### Configuration (config.py)
 
 - Loads settings from environment variables and `.env` files
-- `MODEL_MAP` provides short aliases for common models
 - `Config` class validates required settings (exits if `DEDALUS_API_KEY` missing)
 - Global config instance created lazily for testability
 
@@ -127,18 +125,6 @@ The proxy implements the OpenAI Chat Completions API format:
 - Same streaming format (SSE with `data:` prefix)
 
 This allows clients like opencode to use the proxy without modification.
-
-### Model Aliasing
-
-Short model names are mapped to full Dedalus model names:
-
-| Alias | Dedalus Model |
-|-------|---------------|
-| `gpt-4o` | `openai/gpt-4o` |
-| `claude-3-sonnet` | `anthropic/claude-3-sonnet` |
-| `gemini-1.5-pro` | `google/gemini-1.5-pro` |
-
-Full model names (with `/`) are passed through unchanged.
 
 ### Global Client Instance
 

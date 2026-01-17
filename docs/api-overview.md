@@ -39,20 +39,14 @@ Verifies connectivity to the Dedalus Labs API upstream service.
 
 ### GET /v1/models
 
-Lists all available models. Returns an OpenAI-compatible model list.
+Returns an empty model list. Users should pass model names directly as expected
+by the Dedalus Labs API (e.g., `openai/gpt-4o`, `anthropic/claude-3-sonnet`).
 
 **Response:**
 ```json
 {
   "object": "list",
-  "data": [
-    {
-      "id": "claude-sonnet-4-20250514",
-      "object": "model",
-      "created": 1704067200,
-      "owned_by": "dedalus"
-    }
-  ]
+  "data": []
 }
 ```
 
