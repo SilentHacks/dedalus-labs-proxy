@@ -130,7 +130,3 @@ Other models may or may not work. See the [opencode integration guide](docs/open
 - [API Overview](docs/api-overview.md) - Detailed endpoint documentation
 - [Architecture](docs/architecture.md) - Codebase structure and design
 - [Contributing](CONTRIBUTING.md) - Development setup and guidelines
-
-## License
-
-MIT
