@@ -1,6 +1,6 @@
 # Dedalus Labs Proxy
 
-OpenAI-compatible proxy server for the Dedalus Labs API. Use your favorite OpenAI-compatible tools (like [opencode](https://opencode.ai)) with Dedalus Labs models.
+OpenAI-compatible proxy server for the Dedalus Labs API. Use your favorite OpenAI-compatible tools (like [OpenCode](https://opencode.ai)) with Dedalus Labs models.
 
 ## Prerequisites
 
@@ -108,25 +108,25 @@ Pass model names directly as expected by the Dedalus Labs API. Examples:
 
 - `openai/gpt-5.2`, `openai/gpt-4.1`, `openai/gpt-4o`
 - `anthropic/claude-opus-4-5`, `anthropic/claude-sonnet-4-5`
-- `google/gemini-3-pro-preview`, `google/gemini-2.5-pro`
+- `google/gemini-3-pro-preview`, `google/gemini-3-flash-preview`
 
 See Dedalus Labs documentation for the full list of available models.
 
-### Tested with opencode
+### Tested with OpenCode
 
-The following models have been verified to work with [opencode](https://opencode.ai):
+The following models have been verified to work with [OpenCode](https://opencode.ai):
 
 | Model | Status |
 |-------|--------|
-| `anthropic/claude-opus-4-5` | Working |
-| `openai/gpt-5.2` | Working |
-| `google/gemini-3-pro-preview` | Partial - [known issues with multi-turn tool calling](docs/GOOGLE_TOOL_CALLING_BUG.md) |
+| `anthropic/claude-opus-4-5` | ✅ Working |
+| `openai/gpt-5.2` | ✅ Working |
+| `google/gemini-3-pro-preview` | ✅ Working (see [notes](docs/GOOGLE_TOOL_CALLING_BUG.md)) |
 
-Other models may or may not work. See the [opencode integration guide](docs/opencode-integration.md) for configuration details.
+Other models may or may not work. See the [OpenCode integration guide](docs/opencode-integration.md) for configuration details.
 
 ## Documentation
 
-- [opencode Integration Guide](docs/opencode-integration.md) - Configure opencode with this proxy
+- [OpenCode Integration Guide](docs/opencode-integration.md) - Configure OpenCode with this proxy
 - [API Overview](docs/api-overview.md) - Detailed endpoint documentation
 - [Architecture](docs/architecture.md) - Codebase structure and design
 - [Contributing](CONTRIBUTING.md) - Development setup and guidelines

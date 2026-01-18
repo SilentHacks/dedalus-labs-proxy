@@ -1,16 +1,16 @@
-# opencode Integration Guide
+# OpenCode Integration Guide
 
-This guide explains how to configure [opencode](https://opencode.ai) to use Dedalus Labs models through this proxy.
+This guide explains how to configure [OpenCode](https://opencode.ai) to use Dedalus Labs models through this proxy.
 
 ## Tested Models
 
-The following models have been verified to work with opencode:
+The following models have been verified to work with OpenCode:
 
 | Model | Status |
 |-------|--------|
-| `anthropic/claude-opus-4-5` | Working |
-| `openai/gpt-5.2` | Working |
-| `google/gemini-3-pro-preview` | Partial - [known issues with multi-turn tool calling](GOOGLE_TOOL_CALLING_BUG.md) |
+| `anthropic/claude-opus-4-5` | ✅ Working |
+| `openai/gpt-5.2` | ✅ Working |
+| `google/gemini-3-pro-preview` | ✅ Working (see [notes](GOOGLE_TOOL_CALLING_BUG.md)) |
 
 Other models may or may not work.
 
@@ -23,7 +23,7 @@ Other models may or may not work.
    dedalus-proxy --host 0.0.0.0
    ```
 
-2. **Configure opencode**
+2. **Configure OpenCode**
 
    Create or edit your `opencode.json` configuration file:
 
@@ -61,6 +61,17 @@ Other models may or may not work.
            },
            "anthropic/claude-opus-4-5": {
              "name": "Claude Opus 4.5"
+           },
+           "google/gemini-3-pro-preview": {
+             "name": "Gemini 3 Pro",
+             "variants": {
+               "high": {
+                 "reasoningEffort": "high"
+               },
+               "low": {
+                 "reasoningEffort": "low"
+               }
+             }
            }
          }
        }
@@ -68,7 +79,7 @@ Other models may or may not work.
    }
    ```
 
-3. **Run opencode**
+3. **Run OpenCode**
 
    The proxy handles all OpenAI-compatible requests and forwards them to Dedalus Labs.
 
@@ -90,7 +101,7 @@ Pass model names directly as expected by the Dedalus Labs API. Examples:
 | `anthropic/claude-opus-4-5` | Anthropic |
 | `anthropic/claude-sonnet-4-5` | Anthropic |
 | `google/gemini-3-pro-preview` | Google |
-| `google/gemini-2.5-pro` | Google |
+| `google/gemini-3-flash-preview` | Google |
 
 See Dedalus Labs documentation for the full list of available models.
 
@@ -98,7 +109,7 @@ See Dedalus Labs documentation for the full list of available models.
 
 ### Connection Refused
 
-**Symptom**: `Connection refused` error when opencode tries to connect.
+**Symptom**: `Connection refused` error when OpenCode tries to connect.
 
 **Solution**: Ensure the proxy is running:
 
@@ -195,12 +206,12 @@ docker run -d \
   dedalus-proxy
 ```
 
-Then configure opencode to connect to `http://localhost:8000/v1`.
+Then configure OpenCode to connect to `http://localhost:8000/v1`.
 
 ### Network Considerations
 
-If opencode runs in a different container or on a different machine:
+If OpenCode runs in a different container or on a different machine:
 
-- **opencode in Docker on macOS/Windows**: Use `http://host.docker.internal:8000/v1`
-- **opencode in Docker on Linux**: Use the host IP address or Docker network service name
-- **opencode on another machine**: Use the host machine's IP address instead of `localhost`
+- **OpenCode in Docker on macOS/Windows**: Use `http://host.docker.internal:8000/v1`
+- **OpenCode in Docker on Linux**: Use the host IP address or Docker network service name
+- **OpenCode on another machine**: Use the host machine's IP address instead of `localhost`

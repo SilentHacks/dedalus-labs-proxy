@@ -18,6 +18,7 @@ class ToolCall(BaseModel):
     id: str
     type: str = "function"
     function: FunctionCall
+    thought_signature: str | None = None
 
 
 class ToolCallDelta(BaseModel):
@@ -27,6 +28,7 @@ class ToolCallDelta(BaseModel):
     id: str | None = None
     type: str | None = None
     function: dict[str, Any] | None = None
+    thought_signature: str | None = None
 
 
 class ChatMessageResponse(BaseModel):

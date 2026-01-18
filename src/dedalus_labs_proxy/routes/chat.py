@@ -73,6 +73,10 @@ def _extract_delta(  # noqa: C901
         if hasattr(delta, "tool_calls") and delta.tool_calls:
             tool_calls = []
             for tc in delta.tool_calls:
+                thought_signature = None
+                if hasattr(tc, "thought_signature") and tc.thought_signature:
+                    thought_signature = tc.thought_signature
+
                 tc_delta = ToolCallDelta(
                     index=tc.index if hasattr(tc, "index") else 0,
                     id=tc.id if hasattr(tc, "id") else None,
@@ -94,6 +98,7 @@ def _extract_delta(  # noqa: C901
                         if hasattr(tc, "function") and tc.function
                         else None
                     ),
+                    thought_signature=thought_signature,
                 )
                 tool_calls.append(tc_delta)
 
@@ -224,23 +229,6 @@ def _sanitize_tools_for_google(tools: list[dict[str, Any]]) -> list[dict[str, An
     return sanitized
 
 
-def _has_tool_call_history(messages: list[dict[str, Any]]) -> bool:
-    """Check if messages contain tool call history.
-
-    Args:
-        messages: List of message dicts.
-
-    Returns:
-        True if any message has tool_calls or is a tool result.
-    """
-    for msg in messages:
-        if msg.get("tool_calls"):
-            return True
-        if msg.get("role") == "tool":
-            return True
-    return False
-
-
 def _is_google_model(model: str) -> bool:
     """Check if a model is a Google model.
 
@@ -251,6 +239,47 @@ def _is_google_model(model: str) -> bool:
         True if the model is a Google model.
     """
     return model.startswith("google/") or model.startswith("gemini")
+
+
+def _inject_thought_signatures(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Inject dummy thought_signature for Google models when client doesn't preserve them.
+
+    Google Gemini 3 models require thought_signature on tool calls in message history.
+    If the client (e.g., OpenCode) doesn't preserve these, we inject a dummy signature
+    that tells Google to skip validation.
+
+    See: https://ai.google.dev/gemini-api/docs/thought-signatures
+
+    Args:
+        messages: List of message dicts.
+
+    Returns:
+        Messages with thought_signature injected where needed.
+    """
+    result = []
+    for msg in messages:
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            msg = msg.copy()
+            tool_calls = []
+            for idx, tc in enumerate(msg["tool_calls"]):
+                tc = tc.copy()
+                if not tc.get("thought_signature"):
+                    if idx == 0:
+                        # Google-approved magic string to skip signature validation
+                        # See: https://ai.google.dev/gemini-api/docs/thought-signatures#faqs
+                        # Base64-encoded because Dedalus SDK expects encoded signatures
+                        # b64encode(b"skip_thought_signature_validator")
+                        tc["thought_signature"] = (
+                            "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="
+                        )
+                        logger.debug(
+                            "Injected dummy thought_signature for tool call %s",
+                            tc.get("function", {}).get("name", "unknown"),
+                        )
+                tool_calls.append(tc)
+            msg["tool_calls"] = tool_calls
+        result.append(msg)
+    return result
 
 
 async def _iter_with_keepalive(
@@ -306,9 +335,6 @@ async def _stream_google_with_tools(
     Google models via Dedalus API don't properly support streaming with function calling.
     This workaround makes a non-streaming request and simulates streaming output.
 
-    KNOWN LIMITATION: Multi-turn tool conversations with Google models will fail.
-    See the module docstring and GOOGLE_TOOL_CALLING_BUG.md for details.
-
     Args:
         request: The chat completion request.
         config: The application configuration.
@@ -329,6 +355,9 @@ async def _stream_google_with_tools(
     try:
         messages = [msg.model_dump(exclude_none=True) for msg in request.messages]
 
+        # Inject thought_signature for Google models (required for Gemini 3)
+        messages = _inject_thought_signatures(messages)
+
         tools = (
             [tool.model_dump(exclude_none=True) for tool in request.tools]
             if request.tools
@@ -339,14 +368,6 @@ async def _stream_google_with_tools(
         if tools:
             logger.debug("Sanitizing %d tools for Google API", len(tools))
             tools = _sanitize_tools_for_google(tools)
-
-        # Check if we have tool call history - this is a known broken case
-        if _has_tool_call_history(messages):
-            logger.warning(
-                "Tool call history detected for Google model. "
-                "This is a known limitation - multi-turn tool conversations fail "
-                "due to a bug in the Dedalus SDK. See GOOGLE_TOOL_CALLING_BUG.md"
-            )
 
         # Create the API call as a task so we can send keepalive pings while waiting
         api_task = asyncio.create_task(
@@ -393,6 +414,10 @@ async def _stream_google_with_tools(
         if hasattr(response_message, "tool_calls") and response_message.tool_calls:
             tool_call_deltas = []
             for idx, tc in enumerate(response_message.tool_calls):
+                thought_signature = None
+                if hasattr(tc, "thought_signature") and tc.thought_signature:
+                    thought_signature = tc.thought_signature
+
                 tool_call_deltas.append(
                     ToolCallDelta(
                         index=idx,
@@ -402,6 +427,7 @@ async def _stream_google_with_tools(
                             "name": tc.function.name,
                             "arguments": tc.function.arguments,
                         },
+                        thought_signature=thought_signature,
                     )
                 )
 
@@ -499,7 +525,7 @@ async def _stream_chat_completion(
     config = get_config()
     dedalus_model = request.model
 
-    # Workaround: Google models don't support streaming with tools via Dedalus API
+    # Google models don't support streaming with tools via Dedalus API
     # Fall back to non-streaming and simulate streaming response
     if _is_google_model(dedalus_model) and request.tools:
         async for chunk in _stream_google_with_tools(request, config):
@@ -663,6 +689,10 @@ def _extract_tool_calls(message: Any) -> list[ToolCall] | None:
 
     tool_calls = []
     for tc in message.tool_calls:
+        thought_signature = None
+        if hasattr(tc, "thought_signature") and tc.thought_signature:
+            thought_signature = tc.thought_signature
+
         tool_call = ToolCall(
             id=tc.id,
             type=tc.type if hasattr(tc, "type") else "function",
@@ -670,6 +700,7 @@ def _extract_tool_calls(message: Any) -> list[ToolCall] | None:
                 name=tc.function.name,
                 arguments=tc.function.arguments,
             ),
+            thought_signature=thought_signature,
         )
         tool_calls.append(tool_call)
     return tool_calls
@@ -708,12 +739,19 @@ async def chat_completions(
         request.parallel_tool_calls,
     )
     for i, msg in enumerate(request.messages):
+        has_thought_sig = False
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                if tc.get("thought_signature"):
+                    has_thought_sig = True
+                    break
         logger.debug(
-            "  message[%d]: role=%s, has_content=%s, tool_calls=%s",
+            "  message[%d]: role=%s, has_content=%s, tool_calls=%s, has_thought_sig=%s",
             i,
             msg.role,
             bool(msg.content),
             bool(msg.tool_calls),
+            has_thought_sig,
         )
     if request.tools:
         tool_names = [t.function.name for t in request.tools[:5]]
@@ -733,13 +771,9 @@ async def chat_completions(
     try:
         messages = [msg.model_dump(exclude_none=True) for msg in request.messages]
 
-        # Check for known Google tool call limitation
-        if _is_google_model(dedalus_model) and _has_tool_call_history(messages):
-            logger.warning(
-                "Tool call history detected for Google model. "
-                "This is a known limitation - multi-turn tool conversations fail "
-                "due to a bug in the Dedalus SDK. See GOOGLE_TOOL_CALLING_BUG.md"
-            )
+        # Inject thought_signature for Google models (required for Gemini 3)
+        if _is_google_model(dedalus_model):
+            messages = _inject_thought_signatures(messages)
 
         tools = (
             [tool.model_dump(exclude_none=True) for tool in request.tools]

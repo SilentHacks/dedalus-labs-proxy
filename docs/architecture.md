@@ -37,7 +37,7 @@ src/dedalus_labs_proxy/
                                                 │
 ┌─────────────┐    ┌─────────────┐    ┌────────┴────────┐
 │   Client    │───▶│  FastAPI    │───▶│  DedalusClient  │
-│ (opencode,  │    │  (main.py)  │    │  (dedalus.py)   │
+│ (OpenCode,  │    │  (main.py)  │    │  (dedalus.py)   │
 │  curl, etc) │◀───│             │◀───│                 │
 └─────────────┘    └─────────────┘    └─────────────────┘
      │                   │
@@ -124,7 +124,7 @@ The proxy implements the OpenAI Chat Completions API format:
 - Same error format (`{"error": {...}}`)
 - Same streaming format (SSE with `data:` prefix)
 
-This allows clients like opencode to use the proxy without modification.
+This allows clients like OpenCode to use the proxy without modification.
 
 ### Global Client Instance
 
