@@ -1,11 +1,11 @@
 # Dedalus Labs Proxy
 
-OpenAI-compatible proxy server for the Dedalus Labs API. Use your favorite OpenAI-compatible tools (like [OpenCode](https://opencode.ai)) with Dedalus Labs models.
+OpenAI-compatible proxy server for the [Dedalus Labs](https://www.dedaluslabs.ai) API. Use your favorite OpenAI-compatible tools (like [OpenCode](https://opencode.ai)) with Dedalus Labs models.
 
 ## Prerequisites
 
 - Python 3.11+
-- `DEDALUS_API_KEY` environment variable
+- `DEDALUS_API_KEY` environment variable ([get your API key here](https://www.dedaluslabs.ai/dashboard/api-keys))
 
 ## Installation
 
