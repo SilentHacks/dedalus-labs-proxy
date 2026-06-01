@@ -8,6 +8,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+class ConfigurationError(Exception):
+    """Raised when required configuration is missing or invalid."""
+
+
 class Config:
     """Application configuration loaded from environment variables."""
 
@@ -15,17 +19,16 @@ class Config:
         """Initialize configuration from environment variables.
 
         Args:
-            require_api_key: If True, exit if DEDALUS_API_KEY is not set.
+            require_api_key: If True, raise ConfigurationError if DEDALUS_API_KEY
+                is not set.
         """
         self.dedalus_api_key = os.getenv("DEDALUS_API_KEY")
         if require_api_key and not self.dedalus_api_key:
-            print(
-                "Error: DEDALUS_API_KEY environment variable is required",
-                file=sys.stderr,
+            raise ConfigurationError(
+                "DEDALUS_API_KEY environment variable is required"
             )
-            sys.exit(1)
 
-        self.host = os.getenv("HOST", "0.0.0.0")
+        self.host = os.getenv("HOST", "localhost")
         self.port = int(os.getenv("PORT", "8000"))
         self.dedalus_base_url = os.getenv(
             "DEDALUS_BASE_URL", "https://api.dedaluslabs.ai"
@@ -38,7 +41,6 @@ class Config:
         self.stream_keepalive_interval = float(
             os.getenv("STREAM_KEEPALIVE_INTERVAL", "15")
         )
-        # Default max tokens for tool-enabled requests (large to support file writes)
         self.tool_max_tokens = int(os.getenv("TOOL_MAX_TOKENS", "128000"))
 
 
@@ -58,11 +60,19 @@ def init_config(require_api_key: bool = True) -> Config:
     """Initialize and return the global configuration.
 
     Args:
-        require_api_key: If True, exit if DEDALUS_API_KEY is not set.
+        require_api_key: If True, raise ConfigurationError if DEDALUS_API_KEY
+            is not set.
 
     Returns:
         The configuration instance.
+
+    Raises:
+        ConfigurationError: If required configuration is missing.
     """
     global _config
-    _config = Config(require_api_key=require_api_key)
+    try:
+        _config = Config(require_api_key=require_api_key)
+    except ConfigurationError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
     return _config
