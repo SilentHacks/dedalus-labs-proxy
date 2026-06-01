@@ -42,6 +42,17 @@ class Config:
             os.getenv("STREAM_KEEPALIVE_INTERVAL", "15")
         )
         self.tool_max_tokens = int(os.getenv("TOOL_MAX_TOKENS", "128000"))
+        cors_origins = os.getenv("CORS_ORIGINS", "*")
+        self.cors_origins = (
+            ["*"]
+            if cors_origins.strip() == "*"
+            else [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
+        )
+        self.disable_docs = os.getenv("DISABLE_DOCS", "false").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
 
 
 # Global config instance - initialized lazily to allow testing

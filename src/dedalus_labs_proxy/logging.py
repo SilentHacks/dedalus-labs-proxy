@@ -70,7 +70,16 @@ def sanitize_log_data(data: Any, sensitive_fields: list[str] | None = None) -> A
         Sanitized data with sensitive values replaced by '[REDACTED]'.
     """
     if sensitive_fields is None:
-        sensitive_fields = ["api_key", "password", "token", "authorization", "bearer"]
+        sensitive_fields = [
+            "api_key",
+            "password",
+            "token",
+            "authorization",
+            "bearer",
+            "x-api-key",
+            "x-auth-token",
+            "cookie",
+        ]
 
     if isinstance(data, dict):
         return {
