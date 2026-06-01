@@ -22,7 +22,8 @@ async def list_models(
     try:
         response = await client.list_models()
         if hasattr(response, "model_dump"):
-            return response.model_dump()
+            payload: dict[str, Any] = response.model_dump()
+            return payload
         if isinstance(response, dict):
             return response
         return {"object": "list", "data": list(response)}

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from dedalus_labs_proxy.services.dedalus import DedalusRunner
+from dedalus_labs_proxy.services.dedalus import DedalusRunner, build_completion_kwargs
 
 
 @pytest.mark.asyncio
@@ -55,3 +55,27 @@ async def test_tool_request_uses_tool_max_tokens_when_unset() -> None:
 
     kwargs = sdk_client.chat.completions.create.await_args.kwargs
     assert kwargs["max_tokens"] == 64000
+
+
+def test_build_completion_kwargs_openai_uses_max_completion_tokens() -> None:
+    kwargs = build_completion_kwargs(
+        model="openai/gpt-4",
+        messages=[{"role": "user", "content": "hi"}],
+        stream=False,
+        tool_max_tokens=128000,
+        max_tokens=50,
+    )
+    assert kwargs["max_completion_tokens"] == 50
+    assert "max_tokens" not in kwargs
+
+
+def test_build_completion_kwargs_anthropic_uses_max_tokens_only() -> None:
+    kwargs = build_completion_kwargs(
+        model="anthropic/claude-3-opus",
+        messages=[{"role": "user", "content": "hi"}],
+        stream=False,
+        tool_max_tokens=128000,
+        max_tokens=50,
+    )
+    assert kwargs["max_tokens"] == 50
+    assert "max_completion_tokens" not in kwargs

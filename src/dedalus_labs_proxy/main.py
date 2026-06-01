@@ -2,6 +2,7 @@
 
 import os
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -28,7 +29,7 @@ def _docs_disabled() -> bool:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_config(require_api_key=True)
     app.state.dedalus_client = create_dedalus_client()
     yield

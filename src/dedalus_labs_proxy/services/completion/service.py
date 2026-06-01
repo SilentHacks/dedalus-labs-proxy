@@ -43,7 +43,9 @@ from dedalus_labs_proxy.services.completion.sse import (
     format_chunk,
     yield_sse_error,
 )
-from dedalus_labs_proxy.services.completion.streaming_keepalive import iter_with_keepalive
+from dedalus_labs_proxy.services.completion.streaming_keepalive import (
+    iter_with_keepalive,
+)
 from dedalus_labs_proxy.services.dedalus import DedalusClient, DedalusRunner
 
 _completion_logger = logging.getLogger("dedalus-proxy")
@@ -112,6 +114,96 @@ def _apply_server_defaults(
     if not updates:
         return request
     return request.model_copy(update=updates)
+
+
+def _runner_kwargs(prepared: "PreparedRequest", *, stream: bool) -> dict[str, Any]:
+    return {
+        "model": prepared.model,
+        "messages": prepared.messages,
+        "stream": stream,
+        "temperature": prepared.temperature,
+        "max_tokens": prepared.max_tokens,
+        "max_completion_tokens": prepared.max_completion_tokens,
+        "top_p": prepared.top_p,
+        "stop": prepared.stop,
+        "tools": prepared.tools,
+        "tool_choice": prepared.tool_choice,
+        "parallel_tool_calls": prepared.parallel_tool_calls,
+        "reasoning_effort": prepared.reasoning_effort,
+        "verbosity": prepared.verbosity,
+    }
+
+
+def _track_tool_call_sizes(
+    tool_calls: list[ToolCallDelta] | None,
+    tool_call_args_size: dict[int, int],
+) -> None:
+    if not tool_calls:
+        return
+    for tc in tool_calls:
+        if tc.function and tc.function.get("arguments"):
+            idx = tc.index
+            tool_call_args_size[idx] = tool_call_args_size.get(idx, 0) + len(
+                tc.function["arguments"]
+            )
+
+
+def _log_stream_finish_reason(
+    finish_reason: str,
+    chunk_count: int,
+    tool_call_args_size: dict[int, int],
+) -> None:
+    if finish_reason == "length":
+        logger.warning(
+            "Stream TRUNCATED (finish_reason=length) after %d chunks, "
+            "tool_call_sizes=%s",
+            chunk_count,
+            tool_call_args_size,
+        )
+        return
+    logger.info(
+        "Stream finish_reason=%s after %d chunks, tool_call_sizes=%s",
+        finish_reason,
+        chunk_count,
+        tool_call_args_size,
+    )
+
+
+def _build_response_from_dedalus(
+    dedalus_response: Any, request: ChatCompletionRequest
+) -> ChatCompletionResponse:
+    if not dedalus_response.choices:
+        raise HTTPException(status_code=502, detail="Upstream returned empty choices")
+
+    response_message = dedalus_response.choices[0].message
+    content = (
+        response_message.content if hasattr(response_message, "content") else None
+    )
+    finish_reason = dedalus_response.choices[0].finish_reason
+    if finish_reason:
+        finish_reason = str(finish_reason)
+
+    return ChatCompletionResponse(
+        id=dedalus_response.id,
+        created=int(time.time()),
+        model=request.model,
+        choices=[
+            ChatCompletionResponseChoice(
+                index=0,
+                message=ChatMessageResponse(
+                    role=response_message.role,
+                    content=content,
+                    tool_calls=extract_tool_calls(response_message),
+                ),
+                finish_reason=finish_reason,
+            )
+        ],
+        usage=ChatCompletionUsage(
+            prompt_tokens=dedalus_response.usage.prompt_tokens,
+            completion_tokens=dedalus_response.usage.completion_tokens,
+            total_tokens=dedalus_response.usage.total_tokens,
+        ),
+    )
 
 
 class PreparedRequest:
@@ -184,25 +276,6 @@ class ChatCompletionService:
             verbosity=request.verbosity,
         )
 
-    def _completion_kwargs(
-        self, prepared: PreparedRequest, *, stream: bool
-    ) -> dict[str, Any]:
-        return {
-            "model": prepared.model,
-            "messages": prepared.messages,
-            "stream": stream,
-            "temperature": prepared.temperature,
-            "max_tokens": prepared.max_tokens,
-            "max_completion_tokens": prepared.max_completion_tokens,
-            "top_p": prepared.top_p,
-            "stop": prepared.stop,
-            "tools": prepared.tools,
-            "tool_choice": prepared.tool_choice,
-            "parallel_tool_calls": prepared.parallel_tool_calls,
-            "reasoning_effort": prepared.reasoning_effort,
-            "verbosity": prepared.verbosity,
-        }
-
     def log_request(self, request: ChatCompletionRequest) -> None:
         logger.info(
             "Chat completion: model=%s, stream=%s, messages=%d, tools=%d",
@@ -217,7 +290,7 @@ class ChatCompletionService:
         prepared = self.prepare_request(request)
         try:
             dedalus_response = await self.runner.create_completion(
-                **self._completion_kwargs(prepared, stream=False)
+                **_runner_kwargs(prepared, stream=False)
             )
         except (
             dedalus_labs.AuthenticationError,
@@ -227,46 +300,12 @@ class ChatCompletionService:
         ) as exc:
             raise map_dedalus_exception_to_http(exc) from None
 
-        if not dedalus_response.choices:
-            raise HTTPException(
-                status_code=502, detail="Upstream returned empty choices"
-            )
-
         logger.info(
             "Chat completion successful: id=%s, tokens=%d",
             dedalus_response.id,
             dedalus_response.usage.total_tokens,
         )
-
-        response_message = dedalus_response.choices[0].message
-        content = (
-            response_message.content if hasattr(response_message, "content") else None
-        )
-        finish_reason = dedalus_response.choices[0].finish_reason
-        if finish_reason:
-            finish_reason = str(finish_reason)
-
-        return ChatCompletionResponse(
-            id=dedalus_response.id,
-            created=int(time.time()),
-            model=request.model,
-            choices=[
-                ChatCompletionResponseChoice(
-                    index=0,
-                    message=ChatMessageResponse(
-                        role=response_message.role,
-                        content=content,
-                        tool_calls=extract_tool_calls(response_message),
-                    ),
-                    finish_reason=finish_reason,
-                )
-            ],
-            usage=ChatCompletionUsage(
-                prompt_tokens=dedalus_response.usage.prompt_tokens,
-                completion_tokens=dedalus_response.usage.completion_tokens,
-                total_tokens=dedalus_response.usage.total_tokens,
-            ),
-        )
+        return _build_response_from_dedalus(dedalus_response, request)
 
     async def stream(self, request: ChatCompletionRequest) -> AsyncGenerator[str, None]:
         if is_google_model(request.model) and request.tools:
@@ -293,7 +332,7 @@ class ChatCompletionService:
                 )
 
             stream = await self.runner.create_completion(
-                **self._completion_kwargs(prepared, stream=True)
+                **_runner_kwargs(prepared, stream=True)
             )
 
             keepalive_interval = config.stream_keepalive_interval
@@ -313,30 +352,13 @@ class ChatCompletionService:
                     continue
 
                 if parsed.tool_calls:
-                    for tc in parsed.tool_calls:
-                        if tc.function and tc.function.get("arguments"):
-                            args_chunk = tc.function["arguments"]
-                            idx = tc.index
-                            tool_call_args_size[idx] = tool_call_args_size.get(
-                                idx, 0
-                            ) + len(args_chunk)
+                    _track_tool_call_sizes(parsed.tool_calls, tool_call_args_size)
 
                 if parsed.finish_reason:
                     final_finish_reason = parsed.finish_reason
-                    if parsed.finish_reason == "length":
-                        logger.warning(
-                            "Stream TRUNCATED (finish_reason=length) after %d chunks, "
-                            "tool_call_sizes=%s",
-                            chunk_count,
-                            tool_call_args_size,
-                        )
-                    else:
-                        logger.info(
-                            "Stream finish_reason=%s after %d chunks, tool_call_sizes=%s",
-                            parsed.finish_reason,
-                            chunk_count,
-                            tool_call_args_size,
-                        )
+                    _log_stream_finish_reason(
+                        parsed.finish_reason, chunk_count, tool_call_args_size
+                    )
 
                 sse_chunk = ChatCompletionChunk(
                     id=completion_id,
@@ -391,9 +413,7 @@ class ChatCompletionService:
 
         try:
             api_task = asyncio.create_task(
-                self.runner.create_completion(
-                    **self._completion_kwargs(prepared, stream=False)
-                )
+                self.runner.create_completion(**_runner_kwargs(prepared, stream=False))
             )
 
             while not api_task.done():
