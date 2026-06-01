@@ -14,7 +14,7 @@ Thank you for your interest in contributing! This guide will help you set up you
 1. Clone the repository:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/SilentHacks/dedalus-labs-proxy.git
 cd dedalus-labs-proxy
 ```
 
@@ -42,10 +42,11 @@ export DEDALUS_API_KEY=your-api-key
 dedalus-proxy --log-level debug
 ```
 
-Or create a `.env` file in the project root:
+Or copy the example env file:
 
-```
-DEDALUS_API_KEY=your-api-key
+```bash
+cp .env.example .env
+# Edit .env and set DEDALUS_API_KEY
 ```
 
 For development with auto-reload:

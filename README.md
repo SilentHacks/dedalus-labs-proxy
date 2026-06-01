@@ -1,11 +1,37 @@
 # Dedalus Labs Proxy
 
+[![CI](https://github.com/SilentHacks/dedalus-labs-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/SilentHacks/dedalus-labs-proxy/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 OpenAI-compatible proxy server for the [Dedalus Labs](https://www.dedaluslabs.ai) API. Use your favorite OpenAI-compatible tools (like [OpenCode](https://opencode.ai)) with Dedalus Labs models.
+
+## Features
+
+- OpenAI-compatible `/v1/chat/completions` and `/v1/models` endpoints
+- Streaming SSE with keepalive pings for long-running tool calls
+- Google Gemini compatibility workarounds (tool schemas, thought signatures)
+- Docker and Docker Compose support
+- Configurable via environment variables or CLI flags
 
 ## Prerequisites
 
 - Python 3.11+
 - `DEDALUS_API_KEY` environment variable ([get your API key here](https://www.dedaluslabs.ai/dashboard/api-keys))
+
+## Quick Start
+
+```bash
+git clone https://github.com/SilentHacks/dedalus-labs-proxy.git
+cd dedalus-labs-proxy
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -e .
+cp .env.example .env       # then edit .env with your API key
+dedalus-proxy
+```
+
+The server runs at `http://localhost:8000` by default.
 
 ## Installation
 
@@ -28,9 +54,7 @@ docker run -e DEDALUS_API_KEY=your-key -p 8000:8000 dedalus-proxy
 ### Docker Compose
 
 ```bash
-# Set your API key first
 export DEDALUS_API_KEY=your-api-key
-
 docker compose up
 ```
 
@@ -38,20 +62,16 @@ Or create a `.env` file with `DEDALUS_API_KEY=your-api-key`.
 
 ## Usage
 
-Start the proxy server:
-
 ```bash
 export DEDALUS_API_KEY=your-api-key
 dedalus-proxy
 ```
 
-The server runs on `http://localhost:8000` by default.
-
 ### CLI Options
 
 ```
---port PORT        Port to run the server on (default: 8000)
---host HOST        Host to bind to (default: localhost)
+--port PORT        Port to run the server on (default: 8000, env PORT)
+--host HOST        Host to bind to (default: localhost, env HOST)
 --log-level LEVEL  Log level: debug, info, warning, error (default: info)
 --json-logs        Output logs in JSON format
 ```
@@ -72,6 +92,8 @@ The server runs on `http://localhost:8000` by default.
 | `TOOL_MAX_TOKENS` | `128000` | Default max tokens for tool-enabled requests (large values increase cost and latency) |
 | `CORS_ORIGINS` | `*` | Comma-separated allowed origins, or `*` for all |
 | `DISABLE_DOCS` | `false` | Set to `true` to disable `/docs` and `/redoc` |
+
+See [`.env.example`](.env.example) for a full template.
 
 ### Example Request
 
@@ -117,7 +139,7 @@ Pass model names directly as expected by the Dedalus Labs API. Examples:
 - `anthropic/claude-opus-4-5`, `anthropic/claude-sonnet-4-5`
 - `google/gemini-3-pro-preview`, `google/gemini-3-flash-preview`
 
-See Dedalus Labs documentation for the full list of available models.
+Run `curl http://localhost:8000/v1/models` to list models available to your API key.
 
 ### Tested with OpenCode
 
@@ -125,9 +147,9 @@ The following models have been verified to work with [OpenCode](https://opencode
 
 | Model | Status |
 |-------|--------|
-| `anthropic/claude-opus-4-5` | ✅ Working |
-| `openai/gpt-5.2` | ✅ Working |
-| `google/gemini-3-pro-preview` | ✅ Working (see [notes](docs/GOOGLE_TOOL_CALLING_BUG.md)) |
+| `anthropic/claude-opus-4-5` | Working |
+| `openai/gpt-5.2` | Working |
+| `google/gemini-3-pro-preview` | Working (see [notes](docs/GOOGLE_TOOL_CALLING_BUG.md)) |
 
 Other models may or may not work. See the [OpenCode integration guide](docs/opencode-integration.md) for configuration details.
 
@@ -140,9 +162,28 @@ This proxy has **no client authentication**. Anyone who can reach the server can
 - CORS defaults to `*` (all origins). Restrict with `CORS_ORIGINS` in production.
 - Use `GET /health` for load balancer and container probes, not `/health/dedalus`.
 
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest tests/ -v
+mypy src/
+ruff check src/ tests/
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
+
 ## Documentation
 
 - [OpenCode Integration Guide](docs/opencode-integration.md) - Configure OpenCode with this proxy
 - [API Overview](docs/api-overview.md) - Detailed endpoint documentation
 - [Architecture](docs/architecture.md) - Codebase structure and design
 - [Contributing](CONTRIBUTING.md) - Development setup and guidelines
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+## Disclaimer
+
+This is an unofficial community proxy for [Dedalus Labs](https://www.dedaluslabs.ai). It is not affiliated with or endorsed by Dedalus Labs.
