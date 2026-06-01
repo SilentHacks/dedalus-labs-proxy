@@ -2,24 +2,35 @@
 
 from typing import Any
 
-from fastapi import APIRouter
+import dedalus_labs
+from fastapi import APIRouter, Depends, HTTPException
 
+from dedalus_labs_proxy.dependencies import get_dedalus_client
 from dedalus_labs_proxy.logging import logger
+from dedalus_labs_proxy.services.dedalus import DedalusClient
 
 router = APIRouter()
 
 
 @router.get("/v1/models")
-async def list_models() -> dict[str, Any]:
-    """List available models.
+async def list_models(
+    client: DedalusClient = Depends(get_dedalus_client),
+) -> dict[str, Any]:
+    """List available models from the Dedalus Labs API."""
+    logger.info("Listing available models from Dedalus API")
 
-    Returns an empty list. Users should pass model names directly as expected
-    by the Dedalus Labs API (e.g., 'openai/gpt-4o', 'anthropic/claude-3-sonnet').
-
-    Returns:
-        OpenAI-compatible model list response (empty).
-    """
-    logger.info(
-        "Listing available models (no predefined list - use Dedalus model names directly)"
-    )
-    return {"object": "list", "data": []}
+    try:
+        response = await client.list_models()
+        if hasattr(response, "model_dump"):
+            return response.model_dump()
+        if isinstance(response, dict):
+            return response
+        return {"object": "list", "data": list(response)}
+    except dedalus_labs.AuthenticationError:
+        raise HTTPException(
+            status_code=401, detail="Dedalus API authentication failed"
+        ) from None
+    except dedalus_labs.APIConnectionError:
+        raise HTTPException(
+            status_code=503, detail="Cannot connect to Dedalus API"
+        ) from None
