@@ -22,7 +22,7 @@ Fast local health check that verifies the proxy server is running.
 
 ### GET /health/dedalus
 
-Verifies connectivity to the Dedalus Labs API upstream service.
+Verifies connectivity to the Dedalus Labs API upstream service using `models.list` (no completion token cost).
 
 **Response (success):**
 ```json
@@ -39,14 +39,15 @@ Verifies connectivity to the Dedalus Labs API upstream service.
 
 ### GET /v1/models
 
-Returns an empty model list. Users should pass model names directly as expected
-by the Dedalus Labs API (e.g., `openai/gpt-4o`, `anthropic/claude-3-sonnet`).
+Returns the list of models available to your organization from the Dedalus Labs API.
 
 **Response:**
 ```json
 {
   "object": "list",
-  "data": []
+  "data": [
+    {"id": "openai/gpt-4o", "...": "..."}
+  ]
 }
 ```
 

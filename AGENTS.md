@@ -25,15 +25,19 @@ Run these after implementing to get immediate feedback:
 ## Operational Notes
 
 - DEDALUS_API_KEY environment variable is required; server exits with error if missing
-- Default port is 8000, configurable with --port
-- Log level configurable with --log-level (debug, info, warning, error)
-- Use --json-logs for structured JSON log output
+- Default port is 8000, configurable with `--port` or `PORT` env var
+- Default host is localhost, configurable with `--host` or `HOST` env var
+- Log level configurable with `--log-level` or `LOG_LEVEL` env var
+- Use `--json-logs` for structured JSON log output
+- Use `GET /health` for orchestrator probes, not `/health/dedalus`
 
 ## Codebase Patterns
 
 - Routes in `src/dedalus_labs_proxy/routes/`
 - Pydantic models in `src/dedalus_labs_proxy/models/`
+- Chat orchestration in `src/dedalus_labs_proxy/services/completion/`
 - Dedalus SDK wrapper in `src/dedalus_labs_proxy/services/dedalus.py`
+- FastAPI dependencies in `src/dedalus_labs_proxy/dependencies.py`
 - Configuration via environment variables in `src/dedalus_labs_proxy/config.py`
 - FastAPI app in `src/dedalus_labs_proxy/main.py`
 - CLI entry point in `src/dedalus_labs_proxy/cli.py`

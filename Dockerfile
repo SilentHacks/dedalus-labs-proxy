@@ -13,6 +13,9 @@ COPY src/ ./src/
 ENV HOST=0.0.0.0
 ENV PORT=8000
 
+# Healthcheck example (also configured in docker-compose.yml):
+# HEALTHCHECK CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"
+
 # Expose the port
 EXPOSE 8000
 

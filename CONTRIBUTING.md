@@ -56,6 +56,13 @@ uvicorn dedalus_labs_proxy.main:app --reload --port 8000
 
 **Note:** Never commit API keys or `.env` files to version control.
 
+## Security
+
+- The proxy has no client authentication. Do not expose it beyond trusted networks.
+- Default CLI bind is `localhost`; Docker binds `0.0.0.0`.
+- Restrict CORS in production with `CORS_ORIGINS`.
+- Use `GET /health` for probes, not `/health/dedalus`.
+
 ## Validation Commands
 
 Always run these before submitting a PR:
@@ -106,6 +113,7 @@ We use the following tools:
 src/dedalus_labs_proxy/
 ├── cli.py           # CLI entry point (argparse)
 ├── config.py        # Configuration from environment
+├── dependencies.py  # FastAPI dependency providers
 ├── logging.py       # Structured logging setup
 ├── main.py          # FastAPI app initialization
 ├── models/          # Pydantic request/response models
@@ -116,7 +124,8 @@ src/dedalus_labs_proxy/
 │   ├── health.py    # /health endpoints
 │   └── models.py    # /v1/models
 └── services/        # Business logic
-    └── dedalus.py   # Dedalus SDK wrapper
+    ├── dedalus.py   # Dedalus SDK wrapper
+    └── completion/  # Chat completion orchestration
 ```
 
 ## Pull Request Process
@@ -170,7 +179,7 @@ pytest tests/test_chat.py::test_chat_completions_success -v
 - Tests live in the `tests/` directory
 - Use pytest and pytest-asyncio for async tests
 - Use httpx with `ASGITransport` for async API testing
-- Mock external services (Dedalus SDK) in tests
+- Mock external services (Dedalus SDK) via `app.dependency_overrides[get_dedalus_client]`
 - Tests don't require a real API key (they mock the Dedalus SDK)
 
 Example test structure:

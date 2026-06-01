@@ -61,10 +61,17 @@ The server runs on `http://localhost:8000` by default.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DEDALUS_API_KEY` | (required) | Your Dedalus Labs API key |
+| `HOST` | `localhost` | Host to bind (overridden by `--host`) |
+| `PORT` | `8000` | Port to bind (overridden by `--port`) |
+| `LOG_LEVEL` | `INFO` | Default log level (overridden by `--log-level`) |
+| `MAX_TOKENS` | `4096` | Server default when request omits max tokens |
+| `DEFAULT_TEMPERATURE` | `0.7` | Server default when request omits temperature |
 | `REQUEST_TIMEOUT` | `300` | Request timeout in seconds |
 | `MAX_RETRIES` | `2` | Maximum retry attempts for failed requests |
 | `STREAM_KEEPALIVE_INTERVAL` | `15` | Seconds between keepalive pings during streaming |
-| `TOOL_MAX_TOKENS` | `128000` | Default max tokens for tool-enabled requests |
+| `TOOL_MAX_TOKENS` | `128000` | Default max tokens for tool-enabled requests (large values increase cost and latency) |
+| `CORS_ORIGINS` | `*` | Comma-separated allowed origins, or `*` for all |
+| `DISABLE_DOCS` | `false` | Set to `true` to disable `/docs` and `/redoc` |
 
 ### Example Request
 
@@ -95,9 +102,9 @@ Note: The `-N` flag disables buffering for real-time streaming output.
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /health` | Fast local health check |
-| `GET /health/dedalus` | Verify Dedalus API connection and auth |
-| `GET /v1/models` | List available models |
+| `GET /health` | Fast local health check (use this for orchestrator probes) |
+| `GET /health/dedalus` | Verify Dedalus API auth via `models.list` (no completion token cost) |
+| `GET /v1/models` | List available models from Dedalus Labs API |
 | `POST /v1/chat/completions` | Chat completions (streaming and non-streaming) |
 
 Interactive API documentation is available at `/docs` when the server is running.
@@ -123,6 +130,15 @@ The following models have been verified to work with [OpenCode](https://opencode
 | `google/gemini-3-pro-preview` | ✅ Working (see [notes](docs/GOOGLE_TOOL_CALLING_BUG.md)) |
 
 Other models may or may not work. See the [OpenCode integration guide](docs/opencode-integration.md) for configuration details.
+
+## Security
+
+This proxy has **no client authentication**. Anyone who can reach the server can use your `DEDALUS_API_KEY` and incur API charges.
+
+- The CLI binds to `localhost` by default. Docker binds to `0.0.0.0`.
+- Do not expose the proxy on a public network without a firewall or reverse proxy in front.
+- CORS defaults to `*` (all origins). Restrict with `CORS_ORIGINS` in production.
+- Use `GET /health` for load balancer and container probes, not `/health/dedalus`.
 
 ## Documentation
 

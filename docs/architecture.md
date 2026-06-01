@@ -9,6 +9,7 @@ src/dedalus_labs_proxy/
 ├── __init__.py          # Package initialization
 ├── cli.py               # CLI entry point (argparse + uvicorn)
 ├── config.py            # Configuration from environment variables
+├── dependencies.py      # FastAPI dependency providers
 ├── logging.py           # Structured logging setup with JSON option
 ├── main.py              # FastAPI app, middleware, exception handlers
 ├── models/              # Pydantic request/response schemas
@@ -22,7 +23,14 @@ src/dedalus_labs_proxy/
 │   └── models.py        # GET /v1/models
 └── services/            # Business logic
     ├── __init__.py
-    └── dedalus.py       # Dedalus SDK wrapper (DedalusClient, DedalusRunner)
+    ├── dedalus.py       # Dedalus SDK wrapper (DedalusClient, DedalusRunner)
+    └── completion/      # Chat completion orchestration
+        ├── adapters.py          # SDK chunk → OpenAI delta mapping
+        ├── errors.py            # Dedalus exception → HTTP/SSE errors
+        ├── google_compat.py     # Gemini tool/schema workarounds
+        ├── service.py           # ChatCompletionService
+        ├── sse.py               # SSE formatting helpers
+        └── streaming_keepalive.py
 ```
 
 ## Request Flow
@@ -36,14 +44,15 @@ src/dedalus_labs_proxy/
                                                 │ Dedalus SDK
                                                 │
 ┌─────────────┐    ┌─────────────┐    ┌────────┴────────┐
-│   Client    │───▶│  FastAPI    │───▶│  DedalusClient  │
-│ (OpenCode,  │    │  (main.py)  │    │  (dedalus.py)   │
+│   Client    │───▶│  FastAPI    │───▶│ ChatCompletion  │
+│ (OpenCode,  │    │  (main.py)  │    │    Service      │
 │  curl, etc) │◀───│             │◀───│                 │
-└─────────────┘    └─────────────┘    └─────────────────┘
-     │                   │
+└─────────────┘    └─────────────┘    └────────┬────────┘
+     │                   │                     │
+     │                   │                     └── DedalusClient
      │                   ├── Middleware: Logging, CORS
      │                   ├── Exception handlers
-     │                   └── Route handlers
+     │                   └── Route handlers (thin)
      │
      └── OpenAI-compatible requests/responses
 ```
@@ -53,67 +62,49 @@ src/dedalus_labs_proxy/
 1. **Client Request**: Client sends OpenAI-compatible request to `/v1/chat/completions`
 
 2. **Middleware** (main.py):
-   - CORS middleware allows cross-origin requests
+   - CORS middleware (configurable via `CORS_ORIGINS`)
    - Logging middleware records request/response with timing
 
 3. **Route Handler** (routes/chat.py):
    - Validates request using Pydantic models
-   - Passes model name directly to Dedalus API
+   - Delegates to `ChatCompletionService`
 
-4. **Service Layer** (services/dedalus.py):
-   - `DedalusRunner.create_completion()` translates parameters
-   - Calls Dedalus SDK's `AsyncDedalus.chat.completions.create()`
-   - Handles both streaming and non-streaming modes
+4. **Completion Service** (services/completion/service.py):
+   - Applies server defaults, Google compatibility, and tool preparation
+   - Calls `DedalusRunner.create_completion()` via injected `DedalusClient`
 
 5. **Response Transformation**:
-   - Dedalus SDK response is mapped to OpenAI-compatible format
+   - Dedalus SDK response is mapped to OpenAI-compatible format via adapters
    - Streaming uses Server-Sent Events (SSE) with `text/event-stream`
 
 6. **Exception Handling**:
-   - Route handlers (routes/*.py) catch SDK errors and raise `HTTPException`
-   - main.py exception handlers format all errors into OpenAI-compatible JSON
-   - Validation errors → 422 with `{"error": {"message", "type", "details"}}`
-   - HTTP errors → `{"error": {"message": "...", "type": "..."}}`
+   - Non-streaming: service raises `HTTPException` mapped from SDK errors
+   - Streaming: errors emitted as SSE data events at HTTP 200, followed by `[DONE]`
+   - Validation errors → 422 with OpenAI-compatible JSON
 
 ## Key Components
 
 ### Configuration (config.py)
 
 - Loads settings from environment variables and `.env` files
-- `Config` class validates required settings (exits if `DEDALUS_API_KEY` missing)
-- Global config instance created lazily for testability
+- `ConfigurationError` raised when required settings are missing
+- `init_config()` used at startup (CLI and FastAPI lifespan)
 
-### Pydantic Models (models/)
+### ChatCompletionService (services/completion/service.py)
 
-**Request Models** (requests.py):
-- `ChatCompletionRequest`: Main request body with model, messages, tools, etc.
-- `ChatMessage`: Individual message with role, content, tool_calls
-- `Tool`, `FunctionDefinition`: Tool/function calling schemas
-- Extra fields allowed (`ConfigDict(extra="allow")`) for forward compatibility
-
-**Response Models** (responses.py):
-- `ChatCompletionResponse`: Non-streaming response
-- `ChatCompletionChunk`, `ChatCompletionChunkDelta`: Streaming chunks
-- `ChatCompletionUsage`: Token usage statistics
+Orchestrates non-streaming, default streaming, and Google+tools simulated streaming paths through a single `prepare_request()` pipeline.
 
 ### Dedalus Service (services/dedalus.py)
 
-**DedalusClient**: Manages the SDK client lifecycle
-- Creates `AsyncDedalus` client on first use
-- Provides `verify_connection()` for health checks
-- Handles cleanup via `close()`
+**DedalusClient**: Manages SDK client lifecycle, injected via FastAPI dependencies.
 
-**DedalusRunner**: Executes completions
-- Translates OpenAI parameters to Dedalus format
-- Handles `max_tokens` vs `max_completion_tokens` based on model
-- Sets default `max_tokens=16384` for tool-enabled requests
+**DedalusRunner**: Executes completions with model-family-specific token parameter handling.
 
-### Streaming (routes/chat.py)
+### Streaming (services/completion/sse.py)
 
-- Uses `AsyncGenerator` to yield SSE-formatted chunks
 - Each chunk: `data: {json}\n\n`
 - Stream ends with `data: [DONE]\n\n`
-- **Important**: Streaming errors are sent as SSE data events (HTTP 200 response), not as HTTP error codes. This matches OpenAI's streaming behavior where errors mid-stream are delivered as event payloads.
+- Errors mid-stream: HTTP 200 with error JSON in SSE body, then `[DONE]`
 
 ## Design Decisions
 
@@ -124,41 +115,35 @@ The proxy implements the OpenAI Chat Completions API format:
 - Same error format (`{"error": {...}}`)
 - Same streaming format (SSE with `data:` prefix)
 
-This allows clients like OpenCode to use the proxy without modification.
+### Dependency Injection
 
-### Global Client Instance
-
-A single `DedalusClient` instance is shared across requests for connection pooling. The client is initialized lazily on first use.
+`DedalusClient` is stored on `app.state` during lifespan and injected into routes via `get_dedalus_client`. Tests override the dependency instead of patching module globals.
 
 ### Error Handling Strategy
 
-**Non-streaming requests** (routes catch SDK errors, raise HTTPException):
+**Non-streaming requests**:
 - **AuthenticationError** → 401 Unauthorized
-- **APITimeoutError** → 504 Gateway Timeout (caught before APIConnectionError due to inheritance)
+- **APITimeoutError** → 504 Gateway Timeout
 - **APIConnectionError** → 503 Service Unavailable
 - **APIStatusError** → passes through SDK's status code
+- Empty upstream `choices` → 502 Bad Gateway
 
-**Streaming requests** (errors emitted as SSE events):
+**Streaming requests**:
 - Errors sent as `data: {"error": {"message": "..."}}\n\n`
 - HTTP response remains 200 (connection already established)
-- Stream ends after error (no `[DONE]` marker)
+- Stream always ends with `[DONE]` after success or error
 
-**All responses** use OpenAI-compatible error format:
-- `{"error": {"message": "...", "type": "..."}}`
-- Validation errors include `details` array with field-level errors
+### Security
 
-### Logging
-
-- Request logging includes method, path, sanitized headers
-- Response logging includes status code and duration in milliseconds
-- JSON output available via `--json-logs` flag for structured logging
+- No client authentication; the server's `DEDALUS_API_KEY` is shared by all callers who can reach the proxy
+- Default bind is `localhost`; Docker uses `0.0.0.0`
+- Use `/health` for probes; `/health/dedalus` calls `models.list` (no completion token cost)
 
 ## Testing Strategy
 
-Tests use `httpx.AsyncClient` with `ASGITransport` for async API testing:
+Tests use `httpx.AsyncClient` with `ASGITransport` and `app.dependency_overrides` for mocking:
 - Health endpoints tested directly
-- Chat completions mock the Dedalus SDK
-- Validation tests verify error formats
-- Streaming tests verify SSE framing
+- Chat completions mock the Dedalus client dependency
+- Unit tests cover Google compat, error mapping, and token kwargs
 
 See `tests/` directory for examples.
