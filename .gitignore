@@ -16,6 +16,10 @@ dist/
 .coverage
 htmlcov/
 
+# Lint / typecheck caches
+.mypy_cache/
+.ruff_cache/
+
 # IDE
 .idea/
 .vscode/
@@ -24,6 +28,7 @@ htmlcov/
 # Environment
 .env
 .env.*
+!.env.example
 
 # Ralph working directory
 .ralph/

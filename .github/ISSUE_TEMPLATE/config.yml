@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Dedalus Labs documentation
+    url: https://docs.dedaluslabs.ai/
+    about: Questions about upstream models or the Dedalus API
+  - name: OpenCode integration guide
+    url: https://github.com/SilentHacks/dedalus-labs-proxy/blob/main/docs/opencode-integration.md
+    about: Configure OpenCode to use this proxy
