@@ -14,15 +14,11 @@ logger = logging.getLogger("dedalus-proxy")
 class DedalusRunner:
     """Runs chat completion requests against the Dedalus API."""
 
-    def __init__(self, client: AsyncDedalus) -> None:
-        """Initialize with a Dedalus client.
-
-        Args:
-            client: AsyncDedalus client instance.
-        """
+    def __init__(self, client: AsyncDedalus, tool_max_tokens: int) -> None:
         self.client = client
+        self.tool_max_tokens = tool_max_tokens
 
-    async def create_completion(  # noqa: C901
+    async def create_completion(
         self,
         model: str,
         messages: list[dict[str, Any]],
@@ -38,26 +34,6 @@ class DedalusRunner:
         reasoning_effort: str | None = None,
         verbosity: str | None = None,
     ) -> AsyncGenerator[Any, None] | Any:
-        """Create a chat completion.
-
-        Args:
-            model: Model identifier.
-            messages: Conversation messages.
-            stream: Whether to stream the response.
-            temperature: Sampling temperature.
-            max_tokens: Maximum tokens to generate.
-            max_completion_tokens: Alternative max tokens parameter.
-            top_p: Top-p sampling parameter.
-            stop: Stop sequences.
-            tools: Tool definitions.
-            tool_choice: Tool choice strategy.
-            parallel_tool_calls: Whether to allow parallel tool calls.
-            reasoning_effort: Reasoning effort level.
-            verbosity: Response verbosity level.
-
-        Returns:
-            The completion response or an async generator for streaming.
-        """
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -67,21 +43,16 @@ class DedalusRunner:
         if temperature is not None:
             kwargs["temperature"] = temperature
 
-        # Handle max_tokens parameter - prefer max_completion_tokens
         effective_max_tokens = None
         if max_completion_tokens is not None:
             effective_max_tokens = max_completion_tokens
         elif max_tokens is not None:
             effective_max_tokens = max_tokens
         elif tools is not None:
-            # Set default max_tokens for tool-enabled requests
-            # Use a high default to support large file writes
-            from dedalus_labs_proxy.config import get_config
-
-            config = get_config()
-            effective_max_tokens = config.tool_max_tokens
-            logger.info(
-                "Setting max_tokens=%d for tool-enabled request", effective_max_tokens
+            effective_max_tokens = self.tool_max_tokens
+            logger.warning(
+                "No max_tokens set for tool request; using TOOL_MAX_TOKENS=%d",
+                effective_max_tokens,
             )
 
         if effective_max_tokens is not None:
@@ -89,13 +60,12 @@ class DedalusRunner:
                 kwargs["max_completion_tokens"] = effective_max_tokens
             else:
                 kwargs["max_tokens"] = effective_max_tokens
-                kwargs["max_completion_tokens"] = effective_max_tokens
 
         logger.info(
             "Dedalus API call: model=%s, stream=%s, max_tokens=%s, tools=%d",
             model,
             stream,
-            kwargs.get("max_tokens"),
+            kwargs.get("max_tokens") or kwargs.get("max_completion_tokens"),
             len(tools) if tools else 0,
         )
 
@@ -122,12 +92,11 @@ class DedalusClient:
     """Manages the Dedalus API client lifecycle."""
 
     def __init__(self) -> None:
-        """Initialize the client manager."""
         self._client: AsyncDedalus | None = None
+        self._runner: DedalusRunner | None = None
 
     @property
     def client(self) -> AsyncDedalus:
-        """Get the Dedalus client, creating it if needed."""
         if self._client is None:
             config = get_config()
             self._client = AsyncDedalus(
@@ -140,32 +109,27 @@ class DedalusClient:
 
     @property
     def runner(self) -> DedalusRunner:
-        """Get a runner instance for the current client."""
-        return DedalusRunner(self.client)
+        if self._runner is None:
+            config = get_config()
+            self._runner = DedalusRunner(self.client, config.tool_max_tokens)
+        return self._runner
 
     async def verify_connection(self) -> bool:
-        """Verify the API connection is working.
-
-        Returns:
-            True if connection is verified.
-
-        Raises:
-            AuthenticationError: If API key is invalid.
-            APIConnectionError: If connection fails.
-        """
-        await self.client.chat.completions.create(  # type: ignore[call-overload]
-            model="openai/gpt-5-mini",
-            messages=[{"role": "user", "content": "test"}],
-            max_tokens=1,
-        )
+        """Verify API auth and connectivity without spending completion tokens."""
+        await self.client.models.list()
         return True
 
+    async def list_models(self) -> Any:
+        """Return available models from the Dedalus API."""
+        return await self.client.models.list()
+
     async def close(self) -> None:
-        """Close the client connection."""
         if self._client is not None:
             await self._client.close()
             self._client = None
+            self._runner = None
 
 
-# Global client instance
-global_client = DedalusClient()
+def create_dedalus_client() -> DedalusClient:
+    """Create a new Dedalus client instance."""
+    return DedalusClient()
