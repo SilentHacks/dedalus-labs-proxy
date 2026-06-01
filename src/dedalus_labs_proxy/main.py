@@ -1,6 +1,8 @@
 """FastAPI application for Dedalus Labs Proxy."""
 
+import os
 import time
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, status
@@ -8,18 +10,43 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from dedalus_labs_proxy.config import ConfigurationError, init_config
 from dedalus_labs_proxy.logging import logger, sanitize_log_data
 from dedalus_labs_proxy.routes import chat_router, health_router, models_router
+from dedalus_labs_proxy.services.dedalus import create_dedalus_client
+
+
+def _parse_cors_origins() -> list[str]:
+    cors_origins = os.getenv("CORS_ORIGINS", "*")
+    if cors_origins.strip() == "*":
+        return ["*"]
+    return [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
+
+
+def _docs_disabled() -> bool:
+    return os.getenv("DISABLE_DOCS", "false").lower() in ("1", "true", "yes")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_config(require_api_key=True)
+    app.state.dedalus_client = create_dedalus_client()
+    yield
+    await app.state.dedalus_client.close()
+
 
 app = FastAPI(
     title="Dedalus Labs Proxy",
     description="OpenAI-compatible proxy for Dedalus Labs API",
     version="0.1.0",
+    lifespan=lifespan,
+    docs_url=None if _docs_disabled() else "/docs",
+    redoc_url=None if _docs_disabled() else "/redoc",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_parse_cors_origins(),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -54,6 +81,25 @@ async def log_requests_responses(request: Request, call_next: Any) -> Any:
     )
 
     return response
+
+
+@app.exception_handler(ConfigurationError)
+async def configuration_error_handler(
+    request: Request, exc: ConfigurationError
+) -> JSONResponse:
+    """Handle missing configuration with a structured 503 response."""
+    logger.error(
+        "Configuration error on %s %s: %s", request.method, request.url.path, exc
+    )
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "error": {
+                "message": "Server not configured",
+                "type": "configuration_error",
+            }
+        },
+    )
 
 
 @app.exception_handler(RequestValidationError)
