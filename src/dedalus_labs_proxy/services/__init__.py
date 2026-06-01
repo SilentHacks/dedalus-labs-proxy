@@ -3,7 +3,7 @@
 from dedalus_labs_proxy.services.dedalus import (
     DedalusClient,
     DedalusRunner,
-    global_client,
+    create_dedalus_client,
 )
 
-__all__ = ["DedalusClient", "DedalusRunner", "global_client"]
+__all__ = ["DedalusClient", "DedalusRunner", "create_dedalus_client"]
