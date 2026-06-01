@@ -1,12 +1,14 @@
 """Tests for tool_choice serialization and Google streaming prep."""
 
-from unittest.mock import AsyncMock, MagicMock
+from collections.abc import AsyncGenerator
+from typing import Any
+from unittest.mock import MagicMock
 
-import dedalus_labs
 import pytest
 from httpx import AsyncClient
 
 from dedalus_labs_proxy.services.completion.service import serialize_tool_choice
+from tests.conftest import MockResponse, make_auth_error
 
 
 def test_serialize_tool_choice_passthrough_unknown_string() -> None:
@@ -22,10 +24,18 @@ async def test_google_stream_injects_thought_signatures_without_tools_field(
     async_client: AsyncClient,
     mock_dedalus_client: MagicMock,
 ) -> None:
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
-    async def mock_create_completion(*args: object, **kwargs: object) -> MagicMock:
+    async def mock_create_completion(*args: Any, **kwargs: Any) -> Any:
         captured.update(kwargs)
+        if kwargs.get("stream"):
+
+            async def stream_gen() -> AsyncGenerator[MockResponse, None]:
+                chunk = MockResponse("ok", "")
+                chunk.choices[0].finish_reason = "stop"
+                yield chunk
+
+            return stream_gen()
 
         class Response:
             choices = [
@@ -68,8 +78,8 @@ async def test_streaming_auth_error_emits_done(
     async_client: AsyncClient,
     mock_dedalus_client: MagicMock,
 ) -> None:
-    async def raise_auth(*args: object, **kwargs: object) -> None:
-        raise dedalus_labs.AuthenticationError("bad key")
+    async def raise_auth(*args: Any, **kwargs: Any) -> None:
+        raise make_auth_error()
 
     mock_dedalus_client.runner.create_completion = raise_auth
 

@@ -5,6 +5,8 @@ from collections.abc import AsyncGenerator, Generator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import dedalus_labs
+import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -15,6 +17,34 @@ from dedalus_labs_proxy.config import init_config
 from dedalus_labs_proxy.dependencies import get_dedalus_client
 from dedalus_labs_proxy.main import app
 from dedalus_labs_proxy.services.dedalus import DedalusClient
+
+
+def make_auth_error(message: str = "bad key") -> dedalus_labs.AuthenticationError:
+    response = MagicMock(spec=httpx.Response)
+    response.status_code = 401
+    response.headers = {"x-request-id": "test-request-id"}
+    return dedalus_labs.AuthenticationError(message, response=response, body=None)
+
+
+def make_connection_error(
+    message: str = "connection failed",
+) -> dedalus_labs.APIConnectionError:
+    request = MagicMock(spec=httpx.Request)
+    return dedalus_labs.APIConnectionError(message=message, request=request)
+
+
+def make_timeout_error() -> dedalus_labs.APITimeoutError:
+    request = MagicMock(spec=httpx.Request)
+    return dedalus_labs.APITimeoutError(request)
+
+
+def make_status_error(
+    status_code: int = 418, message: str = "bad request"
+) -> dedalus_labs.APIStatusError:
+    response = MagicMock(spec=httpx.Response)
+    response.status_code = status_code
+    response.headers = {"x-request-id": "test-request-id"}
+    return dedalus_labs.APIStatusError(message, response=response, body=None)
 
 
 class MockMessage:
