@@ -16,6 +16,7 @@ from dedalus_labs_proxy.usage.tracker import parse_session_id
 from tests.conftest import MockResponse, MockUsage
 
 PROXY_KEY = "test-proxy-key"
+ADMIN_KEY = "test-admin-key"
 
 
 @pytest.fixture
@@ -42,11 +43,13 @@ def usage_admin_enabled(
     """Enable usage tracking and admin routes."""
     monkeypatch.setenv("USAGE_TRACKING", "true")
     monkeypatch.setenv("USAGE_ADMIN_ENABLED", "true")
+    monkeypatch.setenv("USAGE_ADMIN_KEYS", ADMIN_KEY)
     monkeypatch.setenv("PROXY_API_KEYS", PROXY_KEY)
     init_config(require_api_key=True)
     yield
     monkeypatch.delenv("USAGE_TRACKING", raising=False)
     monkeypatch.delenv("USAGE_ADMIN_ENABLED", raising=False)
+    monkeypatch.delenv("USAGE_ADMIN_KEYS", raising=False)
     monkeypatch.delenv("PROXY_API_KEYS", raising=False)
     init_config(require_api_key=True)
 
@@ -165,7 +168,6 @@ async def test_streaming_absorbs_usage_chunk(
 
 
 @pytest.mark.asyncio
-@pytest.mark.asyncio
 async def test_streaming_forwards_usage_chunk_when_requested_without_tracking(
     override_dedalus_client: Any,
 ) -> None:
@@ -196,6 +198,7 @@ async def test_streaming_forwards_usage_chunk_when_requested_without_tracking(
     assert '"usage"' in response.text
 
 
+@pytest.mark.asyncio
 async def test_streaming_forwards_usage_chunk_when_requested(
     tracking_client: AsyncClient,
 ) -> None:
@@ -274,12 +277,13 @@ async def test_admin_usage_returns_summary(admin_client: AsyncClient) -> None:
 
     response = await admin_client.get(
         "/v1/admin/usage",
-        headers={"Authorization": f"Bearer {PROXY_KEY}"},
+        headers={"Authorization": f"Bearer {ADMIN_KEY}"},
     )
     assert response.status_code == 200
     data = response.json()
     assert data["total_requests"] >= 1
     assert "openai/gpt-4" in data["by_model"]
+    assert data["store_scope"] == "per_process_in_memory"
 
 
 @pytest.mark.asyncio
@@ -296,12 +300,39 @@ async def test_admin_session_lookup(admin_client: AsyncClient) -> None:
 
     response = await admin_client.get(
         "/v1/admin/sessions/admin-session",
-        headers={"Authorization": f"Bearer {PROXY_KEY}"},
+        headers={"Authorization": f"Bearer {ADMIN_KEY}"},
     )
     assert response.status_code == 200
     data = response.json()
     assert data["session"]["session_id"] == "admin-session"
     assert data["session"]["request_count"] == 1
+    assert "recent_requests_note" in data
+
+
+@pytest.mark.asyncio
+async def test_admin_usage_rejects_client_proxy_key(admin_client: AsyncClient) -> None:
+    response = await admin_client.get(
+        "/v1/admin/usage",
+        headers={"Authorization": f"Bearer {PROXY_KEY}"},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_admin_usage_disabled_returns_not_found(async_client: AsyncClient) -> None:
+    response = await async_client.get("/v1/admin/usage")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_session_rejects_invalid_session_id(
+    admin_client: AsyncClient,
+) -> None:
+    response = await admin_client.get(
+        "/v1/admin/sessions/bad session",
+        headers={"Authorization": f"Bearer {ADMIN_KEY}"},
+    )
+    assert response.status_code == 400
 
 
 @pytest.mark.asyncio
