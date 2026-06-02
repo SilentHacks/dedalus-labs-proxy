@@ -27,7 +27,9 @@ def is_exempt_from_proxy_auth(method: str, path: str) -> bool:
     """Return True when proxy auth should not be enforced."""
     if method == "OPTIONS":
         return True
-    return path == "/health"
+    if path == "/health":
+        return True
+    return path.startswith("/v1/admin/")
 
 
 def proxy_auth_error_response(detail: str) -> JSONResponse:
@@ -59,5 +61,17 @@ def validate_proxy_auth(
     if token is None:
         return proxy_auth_error_response(MISSING_API_KEY_MESSAGE)
     if not _is_valid_api_key(token, allowed_keys):
+        return proxy_auth_error_response(INVALID_API_KEY_MESSAGE)
+    return None
+
+
+def validate_admin_auth(
+    request: Request, admin_keys: frozenset[str]
+) -> JSONResponse | None:
+    """Validate admin bearer auth; return error response or None if allowed."""
+    token = extract_bearer_token(request.headers.get("authorization"))
+    if token is None:
+        return proxy_auth_error_response(MISSING_API_KEY_MESSAGE)
+    if not _is_valid_api_key(token, admin_keys):
         return proxy_auth_error_response(INVALID_API_KEY_MESSAGE)
     return None

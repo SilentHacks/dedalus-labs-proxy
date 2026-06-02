@@ -86,15 +86,23 @@ class Config:
             "true",
             "yes",
         )
+        self.usage_admin_keys = frozenset(
+            k.strip()
+            for k in os.getenv("USAGE_ADMIN_KEYS", "").split(",")
+            if k.strip()
+        )
         self.usage_store_max_records = int(os.getenv("USAGE_STORE_MAX_RECORDS", "1000"))
         self.usage_session_ttl_seconds = float(
             os.getenv("USAGE_SESSION_TTL_SECONDS", "86400")
         )
         self.usage_chars_per_token = int(os.getenv("USAGE_CHARS_PER_TOKEN", "4"))
-        self.usage_context_limits = self._load_usage_context_limits()
-        if self.usage_admin_enabled and not self.proxy_api_keys:
+        if self.usage_tracking:
+            self.usage_context_limits = self._load_usage_context_limits()
+        else:
+            self.usage_context_limits = build_context_limits()
+        if self.usage_admin_enabled and not self.usage_admin_keys:
             raise ConfigurationError(
-                "USAGE_ADMIN_ENABLED requires PROXY_API_KEYS to be set"
+                "USAGE_ADMIN_ENABLED requires USAGE_ADMIN_KEYS to be set"
             )
 
     def _load_usage_context_limits(self) -> dict[str, int]:
