@@ -1,5 +1,7 @@
 """Bootstrap helpers for usage tracking."""
 
+import threading
+
 from fastapi import FastAPI
 
 from dedalus_labs_proxy.config import Config, get_config
@@ -15,11 +17,17 @@ def ensure_usage_tracking(app: FastAPI, config: Config | None = None) -> None:
         app.state.usage_tracker = None
         return
 
-    if getattr(app.state, "usage_tracker", None) is not None:
-        return
+    lock = getattr(app.state, "_usage_bootstrap_lock", None)
+    if lock is None:
+        lock = threading.Lock()
+        app.state._usage_bootstrap_lock = lock
 
-    app.state.usage_store = UsageStore(
-        max_records=config.usage_store_max_records,
-        session_ttl_seconds=config.usage_session_ttl_seconds,
-    )
-    app.state.usage_tracker = UsageTracker(app.state.usage_store, config)
+    with lock:
+        if getattr(app.state, "usage_tracker", None) is not None:
+            return
+
+        app.state.usage_store = UsageStore(
+            max_records=config.usage_store_max_records,
+            session_ttl_seconds=config.usage_session_ttl_seconds,
+        )
+        app.state.usage_tracker = UsageTracker(app.state.usage_store, config)
