@@ -1,9 +1,12 @@
 """Configuration management for Dedalus Labs Proxy."""
 
+import json
 import os
 import sys
 
 from dotenv import load_dotenv
+
+from dedalus_labs_proxy.usage.context_limits import build_context_limits
 
 load_dotenv()
 
@@ -58,6 +61,64 @@ class Config:
             for k in os.getenv("PROXY_API_KEYS", "").split(",")
             if k.strip()
         )
+        self.usage_tracking = os.getenv("USAGE_TRACKING", "false").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        self.usage_log = os.getenv("USAGE_LOG", "true").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        self.usage_headers = os.getenv("USAGE_HEADERS", "false").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        self.usage_sse_metadata = os.getenv("USAGE_SSE_METADATA", "false").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        self.usage_admin_enabled = os.getenv("USAGE_ADMIN_ENABLED", "false").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        self.usage_store_max_records = int(os.getenv("USAGE_STORE_MAX_RECORDS", "1000"))
+        self.usage_session_ttl_seconds = float(
+            os.getenv("USAGE_SESSION_TTL_SECONDS", "86400")
+        )
+        self.usage_chars_per_token = int(os.getenv("USAGE_CHARS_PER_TOKEN", "4"))
+        self.usage_context_limits = self._load_usage_context_limits()
+        if self.usage_admin_enabled and not self.proxy_api_keys:
+            raise ConfigurationError(
+                "USAGE_ADMIN_ENABLED requires PROXY_API_KEYS to be set"
+            )
+
+    def _load_usage_context_limits(self) -> dict[str, int]:
+        raw = os.getenv("USAGE_CONTEXT_LIMITS_JSON")
+        if not raw:
+            return build_context_limits()
+        try:
+            overrides = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ConfigurationError(
+                "USAGE_CONTEXT_LIMITS_JSON must be valid JSON"
+            ) from exc
+        if not isinstance(overrides, dict):
+            raise ConfigurationError(
+                "USAGE_CONTEXT_LIMITS_JSON must be a JSON object"
+            )
+        parsed: dict[str, int] = {}
+        for key, value in overrides.items():
+            if not isinstance(key, str) or not isinstance(value, int):
+                raise ConfigurationError(
+                    "USAGE_CONTEXT_LIMITS_JSON must map model names to integers"
+                )
+            parsed[key] = value
+        return build_context_limits(parsed)
 
 
 # Global config instance - initialized lazily to allow testing
