@@ -53,6 +53,11 @@ class Config:
             "true",
             "yes",
         )
+        self.proxy_api_keys = frozenset(
+            k.strip()
+            for k in os.getenv("PROXY_API_KEYS", "").split(",")
+            if k.strip()
+        )
 
 
 # Global config instance - initialized lazily to allow testing

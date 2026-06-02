@@ -11,7 +11,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from dedalus_labs_proxy.config import ConfigurationError, init_config
+from dedalus_labs_proxy.auth import validate_proxy_auth
+from dedalus_labs_proxy.config import ConfigurationError, get_config, init_config
 from dedalus_labs_proxy.logging import logger, sanitize_log_data
 from dedalus_labs_proxy.routes import chat_router, health_router, models_router
 from dedalus_labs_proxy.services.dedalus import create_dedalus_client
@@ -52,6 +53,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def proxy_auth_middleware(request: Request, call_next: Any) -> Any:
+    """Enforce optional client bearer auth when PROXY_API_KEYS is configured."""
+    config = get_config()
+    if config.proxy_api_keys:
+        if error := validate_proxy_auth(request, config.proxy_api_keys):
+            return error
+    return await call_next(request)
 
 
 @app.middleware("http")
