@@ -9,6 +9,7 @@ src/dedalus_labs_proxy/
 ├── __init__.py          # Package initialization
 ├── cli.py               # CLI entry point (argparse + uvicorn)
 ├── config.py            # Configuration from environment variables
+├── auth.py              # Optional client bearer-token authentication
 ├── dependencies.py      # FastAPI dependency providers
 ├── logging.py           # Structured logging setup with JSON option
 ├── main.py              # FastAPI app, middleware, exception handlers
@@ -50,7 +51,7 @@ src/dedalus_labs_proxy/
 └─────────────┘    └─────────────┘    └────────┬────────┘
      │                   │                     │
      │                   │                     └── DedalusClient
-     │                   ├── Middleware: Logging, CORS
+     │                   ├── Middleware: CORS, proxy auth, logging
      │                   ├── Exception handlers
      │                   └── Route handlers (thin)
      │
@@ -63,6 +64,7 @@ src/dedalus_labs_proxy/
 
 2. **Middleware** (main.py):
    - CORS middleware (configurable via `CORS_ORIGINS`)
+   - Proxy auth middleware (optional, via `PROXY_API_KEYS`; exempts `GET /health` and `OPTIONS`)
    - Logging middleware records request/response with timing
 
 3. **Route Handler** (routes/chat.py):
@@ -135,7 +137,9 @@ The proxy implements the OpenAI Chat Completions API format:
 
 ### Security
 
-- No client authentication; the server's `DEDALUS_API_KEY` is shared by all callers who can reach the proxy
+- Optional client authentication via `PROXY_API_KEYS` (comma-separated bearer tokens); disabled when unset
+- When enabled, `GET /health` and `OPTIONS` remain exempt for orchestrator probes and CORS preflight
+- The server's `DEDALUS_API_KEY` is used upstream; client keys only gate access to the proxy
 - Default bind is `localhost`; Docker uses `0.0.0.0`
 - Use `/health` for probes; `/health/dedalus` calls `models.list` (no completion token cost)
 

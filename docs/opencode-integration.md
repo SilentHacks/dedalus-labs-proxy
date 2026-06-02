@@ -23,6 +23,8 @@ Other models may or may not work.
    dedalus-proxy --host 0.0.0.0
    ```
 
+   If you enabled client authentication (`PROXY_API_KEYS`), clients must send a proxy key via `Authorization: Bearer <key>`. In OpenCode, set this in the provider `apiKey` option (see below).
+
 2. **Configure OpenCode**
 
    Create or edit your `opencode.json` configuration file:
@@ -35,7 +37,8 @@ Other models may or may not work.
          "name": "dedalus-labs",
          "options": {
            "name": "dedalus-labs",
-           "baseURL": "http://localhost:8000/v1"
+           "baseURL": "http://localhost:8000/v1",
+           "apiKey": "your-proxy-key"
          },
          "models": {
            "openai/gpt-5.2": {
@@ -128,7 +131,11 @@ docker ps | grep dedalus-proxy
 
 **Symptom**: `Invalid API key` or `401 Unauthorized` error.
 
-**Solution**: Verify your `DEDALUS_API_KEY` is set correctly:
+**Solution**: Check whether the error is from proxy client auth or upstream Dedalus auth:
+
+1. **Proxy client auth** (when `PROXY_API_KEYS` is set): ensure your client sends `Authorization: Bearer <proxy-key>`. In OpenCode, set `apiKey` in the provider options to a key listed in `PROXY_API_KEYS`.
+
+2. **Upstream Dedalus auth**: verify your `DEDALUS_API_KEY` is set correctly on the proxy server:
 
 ```bash
 # Check if the variable is set

@@ -9,6 +9,27 @@ The proxy includes auto-generated interactive API documentation:
 - **Swagger UI**: `http://localhost:8000/docs`
 - **ReDoc**: `http://localhost:8000/redoc`
 
+## Client Authentication
+
+Client authentication is **optional** and disabled by default. When `PROXY_API_KEYS` is set to a comma-separated list of keys, all endpoints except `GET /health` and CORS preflight (`OPTIONS`) require a valid bearer token:
+
+```http
+Authorization: Bearer your-proxy-key
+```
+
+**Missing or invalid token:**
+
+```json
+{
+  "error": {
+    "message": "You didn't provide an API key. Provide one via Authorization: Bearer <key>.",
+    "type": "authentication_error"
+  }
+}
+```
+
+OpenAI-compatible clients can pass the proxy key via their `api_key` setting. The proxy key is separate from `DEDALUS_API_KEY`, which the server uses to call Dedalus Labs upstream.
+
 ## Endpoints
 
 ### GET /health

@@ -92,6 +92,7 @@ dedalus-proxy
 | `TOOL_MAX_TOKENS` | `128000` | Default max tokens for tool-enabled requests (large values increase cost and latency) |
 | `CORS_ORIGINS` | `*` | Comma-separated allowed origins, or `*` for all |
 | `DISABLE_DOCS` | `false` | Set to `true` to disable `/docs` and `/redoc` |
+| `PROXY_API_KEYS` | (unset) | Comma-separated client API keys; when set, requires `Authorization: Bearer <key>` |
 
 See [`.env.example`](.env.example) for a full template.
 
@@ -155,10 +156,23 @@ Other models may or may not work. See the [OpenCode integration guide](docs/open
 
 ## Security
 
-This proxy has **no client authentication**. Anyone who can reach the server can use your `DEDALUS_API_KEY` and incur API charges.
+By default, this proxy has **no client authentication**. Anyone who can reach the server can use your `DEDALUS_API_KEY` and incur API charges.
+
+To restrict access when exposing the proxy beyond trusted networks, set `PROXY_API_KEYS` to a comma-separated list of client keys:
+
+```bash
+export PROXY_API_KEYS=dev-key-1,dev-key-2
+```
+
+Clients must then send `Authorization: Bearer <key>`. OpenAI-compatible SDKs (including OpenCode) support this via their `api_key` option — use a proxy key, not your Dedalus key. When unset, behavior is unchanged.
+
+- `GET /health` remains unauthenticated so Docker and load balancer probes keep working.
+- All other endpoints (including `/v1/*` and `/health/dedalus`) require a valid proxy key when `PROXY_API_KEYS` is set.
+
+Additional hardening:
 
 - The CLI binds to `localhost` by default. Docker binds to `0.0.0.0`.
-- Do not expose the proxy on a public network without a firewall or reverse proxy in front.
+- Do not expose the proxy on a public network without authentication or a reverse proxy in front.
 - CORS defaults to `*` (all origins). Restrict with `CORS_ORIGINS` in production.
 - Use `GET /health` for load balancer and container probes, not `/health/dedalus`.
 
