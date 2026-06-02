@@ -20,8 +20,16 @@ src/dedalus_labs_proxy/
 ├── routes/              # API endpoint handlers
 │   ├── __init__.py      # Router exports
 │   ├── chat.py          # POST /v1/chat/completions
+│   ├── admin_usage.py   # GET /v1/admin/usage, session rollups (opt-in)
 │   ├── health.py        # GET /health, GET /health/dedalus
 │   └── models.py        # GET /v1/models
+├── usage/               # Opt-in usage observability (USAGE_TRACKING)
+│   ├── bootstrap.py     # Lazy app-state initialization
+│   ├── context_limits.py
+│   ├── estimator.py
+│   ├── models.py
+│   ├── store.py
+│   └── tracker.py
 └── services/            # Business logic
     ├── __init__.py
     ├── dedalus.py       # Dedalus SDK wrapper (DedalusClient, DedalusRunner)

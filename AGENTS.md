@@ -39,5 +39,6 @@ Run these after implementing to get immediate feedback:
 - Dedalus SDK wrapper in `src/dedalus_labs_proxy/services/dedalus.py`
 - FastAPI dependencies in `src/dedalus_labs_proxy/dependencies.py`
 - Configuration via environment variables in `src/dedalus_labs_proxy/config.py`
+- Usage tracking in `src/dedalus_labs_proxy/usage/` (opt-in via `USAGE_TRACKING`)
 - FastAPI app in `src/dedalus_labs_proxy/main.py`
 - CLI entry point in `src/dedalus_labs_proxy/cli.py`

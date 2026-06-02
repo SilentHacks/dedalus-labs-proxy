@@ -72,6 +72,44 @@ Returns the list of models available to your organization from the Dedalus Labs 
 }
 ```
 
+## Usage Tracking (opt-in)
+
+When `USAGE_TRACKING=true`, the proxy records token usage and context estimates per request. Existing clients require no changes unless they opt into extra metadata.
+
+**Optional request headers:**
+
+| Header | Description |
+|--------|-------------|
+| `X-Proxy-Session-Id` | Correlate multiple completions into a session rollup |
+
+**Optional non-streaming response headers** (`USAGE_HEADERS=true`):
+
+| Header | Description |
+|--------|-------------|
+| `X-Proxy-Request-Id` | Per-request correlation ID |
+| `X-Proxy-Prompt-Tokens` | Upstream prompt tokens |
+| `X-Proxy-Completion-Tokens` | Upstream completion tokens |
+| `X-Proxy-Total-Tokens` | Upstream total tokens |
+| `X-Proxy-Context-Estimate` | Pre-request context size estimate |
+| `X-Proxy-Context-Utilization` | Estimate divided by known model context window |
+| `X-Proxy-Session-Total-Tokens` | Running session total when session ID is set |
+
+**Streaming metadata** (`USAGE_SSE_METADATA=true`): an SSE comment line is emitted before `[DONE]`:
+
+```
+: x-proxy-usage {"total_tokens":8732,"session_total_tokens":142880}
+```
+
+Clients may also pass OpenAI-compatible `stream_options: {"include_usage": true}` to receive a usage chunk in the SSE body.
+
+### GET /v1/admin/usage
+
+Available when `USAGE_TRACKING=true` and `USAGE_ADMIN_ENABLED=true`. Requires a valid `PROXY_API_KEYS` bearer token. Returns in-memory aggregates (cleared on restart).
+
+### GET /v1/admin/sessions/{session_id}
+
+Session rollup and recent matching requests. Same auth and enablement requirements as `/v1/admin/usage`.
+
 ### POST /v1/chat/completions
 
 The main endpoint for generating chat completions. Supports both non-streaming and streaming modes.
