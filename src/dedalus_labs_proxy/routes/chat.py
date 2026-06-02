@@ -36,14 +36,10 @@ async def chat_completions(
     service.log_request(body)
 
     if body.stream:
-        headers = dict(SSE_HEADERS)
-        if tracker is not None and usage_ctx is not None:
-            usage_headers = tracker.build_response_headers(usage_ctx)
-            headers.update(usage_headers)
         return StreamingResponse(
             service.stream(body, usage_ctx=usage_ctx, tracker=tracker),
             media_type="text/event-stream",
-            headers=headers,
+            headers=SSE_HEADERS,
         )
 
     result = await service.complete(body, usage_ctx=usage_ctx, tracker=tracker)
@@ -54,4 +50,4 @@ async def chat_completions(
     if not headers:
         return result
 
-    return JSONResponse(content=result.model_dump(), headers=headers)
+    return JSONResponse(content=result.model_dump(exclude_none=True), headers=headers)
