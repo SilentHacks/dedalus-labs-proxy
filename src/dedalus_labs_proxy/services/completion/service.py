@@ -28,6 +28,7 @@ from dedalus_labs_proxy.services.completion.adapters import (
     ChunkAdapter,
     extract_tool_calls,
     tool_call_from_sdk,
+    usage_from_upstream,
 )
 from dedalus_labs_proxy.services.completion.errors import (
     map_dedalus_exception_to_http,
@@ -47,6 +48,9 @@ from dedalus_labs_proxy.services.completion.streaming_keepalive import (
     iter_with_keepalive,
 )
 from dedalus_labs_proxy.services.dedalus import DedalusClient, DedalusRunner
+from dedalus_labs_proxy.usage.estimator import estimate_context_tokens
+from dedalus_labs_proxy.usage.models import TokenUsage, UsageContext
+from dedalus_labs_proxy.usage.tracker import UsageTracker
 
 _completion_logger = logging.getLogger("dedalus-proxy")
 
@@ -116,8 +120,17 @@ def _apply_server_defaults(
     return request.model_copy(update=updates)
 
 
-def _runner_kwargs(prepared: "PreparedRequest", *, stream: bool) -> dict[str, Any]:
-    return {
+def _runner_kwargs(
+    prepared: "PreparedRequest",
+    *,
+    stream: bool,
+    include_upstream_usage: bool = False,
+) -> dict[str, Any]:
+    stream_options = _merge_stream_options(
+        prepared.stream_options,
+        include_upstream_usage=include_upstream_usage and stream,
+    )
+    kwargs = {
         "model": prepared.model,
         "messages": prepared.messages,
         "stream": stream,
@@ -132,6 +145,66 @@ def _runner_kwargs(prepared: "PreparedRequest", *, stream: bool) -> dict[str, An
         "reasoning_effort": prepared.reasoning_effort,
         "verbosity": prepared.verbosity,
     }
+    if stream_options is not None:
+        kwargs["stream_options"] = stream_options
+    return kwargs
+
+
+def _merge_stream_options(
+    client_options: dict[str, Any] | None,
+    *,
+    include_upstream_usage: bool,
+) -> dict[str, Any] | None:
+    if not include_upstream_usage and not client_options:
+        return None
+    merged = dict(client_options or {})
+    if include_upstream_usage:
+        merged["include_usage"] = True
+    return merged
+
+
+def _extract_stream_options(request: ChatCompletionRequest) -> dict[str, Any] | None:
+    extra = request.model_extra or {}
+    stream_options = extra.get("stream_options")
+    if isinstance(stream_options, dict):
+        return stream_options
+    return None
+
+
+def _update_context_estimate(
+    usage_ctx: UsageContext, prepared: PreparedRequest, config: Config
+) -> None:
+    usage_ctx.context_estimate_tokens = estimate_context_tokens(
+        prepared.messages,
+        prepared.tools,
+        chars_per_token=config.usage_chars_per_token,
+    )
+
+
+async def _finalize_usage(
+    tracker: UsageTracker | None,
+    usage_ctx: UsageContext | None,
+    *,
+    usage: TokenUsage | None = None,
+    finish_reason: str | None = None,
+    error: bool = False,
+) -> None:
+    if tracker is None or usage_ctx is None:
+        return
+    await tracker.finalize(
+        usage_ctx,
+        usage=usage,
+        finish_reason=finish_reason,
+        error=error,
+    )
+
+
+def _usage_sse_metadata(
+    tracker: UsageTracker | None, usage_ctx: UsageContext | None
+) -> str | None:
+    if tracker is None or usage_ctx is None:
+        return None
+    return tracker.build_sse_metadata_comment(usage_ctx)
 
 
 def _track_tool_call_sizes(
@@ -224,6 +297,7 @@ class PreparedRequest:
         parallel_tool_calls: bool | None,
         reasoning_effort: str | None,
         verbosity: str | None,
+        stream_options: dict[str, Any] | None,
     ) -> None:
         self.model = model
         self.messages = messages
@@ -237,6 +311,7 @@ class PreparedRequest:
         self.parallel_tool_calls = parallel_tool_calls
         self.reasoning_effort = reasoning_effort
         self.verbosity = verbosity
+        self.stream_options = stream_options
 
 
 class ChatCompletionService:
@@ -274,6 +349,7 @@ class ChatCompletionService:
             parallel_tool_calls=request.parallel_tool_calls,
             reasoning_effort=request.reasoning_effort,
             verbosity=request.verbosity,
+            stream_options=_extract_stream_options(request),
         )
 
     def log_request(self, request: ChatCompletionRequest) -> None:
@@ -286,8 +362,18 @@ class ChatCompletionService:
         )
         _log_request_debug(request)
 
-    async def complete(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+    async def complete(
+        self,
+        request: ChatCompletionRequest,
+        *,
+        usage_ctx: UsageContext | None = None,
+        tracker: UsageTracker | None = None,
+    ) -> ChatCompletionResponse:
+        config = get_config()
         prepared = self.prepare_request(request)
+        if usage_ctx is not None:
+            _update_context_estimate(usage_ctx, prepared, config)
+
         try:
             dedalus_response = await self.runner.create_completion(
                 **_runner_kwargs(prepared, stream=False)
@@ -298,7 +384,19 @@ class ChatCompletionService:
             dedalus_labs.APIConnectionError,
             dedalus_labs.APIStatusError,
         ) as exc:
+            await _finalize_usage(tracker, usage_ctx, error=True)
             raise map_dedalus_exception_to_http(exc) from None
+
+        finish_reason = None
+        if dedalus_response.choices and dedalus_response.choices[0].finish_reason:
+            finish_reason = str(dedalus_response.choices[0].finish_reason)
+
+        await _finalize_usage(
+            tracker,
+            usage_ctx,
+            usage=usage_from_upstream(dedalus_response.usage),
+            finish_reason=finish_reason,
+        )
 
         logger.info(
             "Chat completion successful: id=%s, tokens=%d",
@@ -307,22 +405,40 @@ class ChatCompletionService:
         )
         return _build_response_from_dedalus(dedalus_response, request)
 
-    async def stream(self, request: ChatCompletionRequest) -> AsyncGenerator[str, None]:
+    async def stream(
+        self,
+        request: ChatCompletionRequest,
+        *,
+        usage_ctx: UsageContext | None = None,
+        tracker: UsageTracker | None = None,
+    ) -> AsyncGenerator[str, None]:
         if is_google_model(request.model) and request.tools:
-            async for chunk in self._stream_google_with_tools(request):
+            async for chunk in self._stream_google_with_tools(
+                request, usage_ctx=usage_ctx, tracker=tracker
+            ):
                 yield chunk
             return
 
-        async for chunk in self._stream_default(request):
+        async for chunk in self._stream_default(
+            request, usage_ctx=usage_ctx, tracker=tracker
+        ):
             yield chunk
 
     async def _stream_default(
-        self, request: ChatCompletionRequest
+        self,
+        request: ChatCompletionRequest,
+        *,
+        usage_ctx: UsageContext | None = None,
+        tracker: UsageTracker | None = None,
     ) -> AsyncGenerator[str, None]:
         config = get_config()
         prepared = self.prepare_request(request)
+        if usage_ctx is not None:
+            _update_context_estimate(usage_ctx, prepared, config)
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
         created = int(time.time())
+        track_usage = usage_ctx is not None
+        captured_usage: TokenUsage | None = None
 
         try:
             if prepared.tools:
@@ -332,7 +448,11 @@ class ChatCompletionService:
                 )
 
             stream = await self.runner.create_completion(
-                **_runner_kwargs(prepared, stream=True)
+                **_runner_kwargs(
+                    prepared,
+                    stream=True,
+                    include_upstream_usage=track_usage,
+                )
             )
 
             keepalive_interval = config.stream_keepalive_interval
@@ -347,6 +467,30 @@ class ChatCompletionService:
                     continue
 
                 chunk_count += 1
+                parsed_usage = ChunkAdapter.parse_usage(chunk)
+                if ChunkAdapter.is_usage_only_chunk(chunk):
+                    if parsed_usage is not None:
+                        captured_usage = parsed_usage
+                    if (
+                        usage_ctx is not None
+                        and usage_ctx.client_requested_usage_in_stream
+                        and parsed_usage is not None
+                    ):
+                        yield format_chunk(
+                            ChatCompletionChunk(
+                                id=completion_id,
+                                created=created,
+                                model=request.model,
+                                choices=[],
+                                usage=ChatCompletionUsage(
+                                    prompt_tokens=parsed_usage.prompt_tokens,
+                                    completion_tokens=parsed_usage.completion_tokens,
+                                    total_tokens=parsed_usage.total_tokens,
+                                ),
+                            )
+                        )
+                    continue
+
                 parsed = ChunkAdapter.parse(chunk)
                 if parsed is None:
                     continue
@@ -385,6 +529,15 @@ class ChatCompletionService:
                     tool_call_args_size,
                 )
 
+            await _finalize_usage(
+                tracker,
+                usage_ctx,
+                usage=captured_usage,
+                finish_reason=final_finish_reason,
+            )
+            metadata = _usage_sse_metadata(tracker, usage_ctx)
+            if metadata is not None:
+                yield metadata
             yield SSE_DONE
 
         except (
@@ -393,15 +546,22 @@ class ChatCompletionService:
             dedalus_labs.APIConnectionError,
             dedalus_labs.APIStatusError,
         ) as exc:
+            await _finalize_usage(tracker, usage_ctx, error=True)
             logger.error("Streaming error for model %s: %s", request.model, exc)
             async for event in stream_dedalus_errors(exc):
                 yield event
 
     async def _stream_google_with_tools(
-        self, request: ChatCompletionRequest
+        self,
+        request: ChatCompletionRequest,
+        *,
+        usage_ctx: UsageContext | None = None,
+        tracker: UsageTracker | None = None,
     ) -> AsyncGenerator[str, None]:
         config = get_config()
         prepared = self.prepare_request(request)
+        if usage_ctx is not None:
+            _update_context_estimate(usage_ctx, prepared, config)
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
         created = int(time.time())
         keepalive_interval = config.stream_keepalive_interval
@@ -427,6 +587,7 @@ class ChatCompletionService:
             dedalus_response = await api_task
 
             if not dedalus_response.choices:
+                await _finalize_usage(tracker, usage_ctx, error=True)
                 async for event in yield_sse_error(
                     {"error": {"message": "Upstream returned empty choices"}}
                 ):
@@ -507,6 +668,15 @@ class ChatCompletionService:
                     ],
                 )
             )
+            await _finalize_usage(
+                tracker,
+                usage_ctx,
+                usage=usage_from_upstream(dedalus_response.usage),
+                finish_reason=finish_reason,
+            )
+            metadata = _usage_sse_metadata(tracker, usage_ctx)
+            if metadata is not None:
+                yield metadata
             yield SSE_DONE
 
         except (
@@ -515,6 +685,7 @@ class ChatCompletionService:
             dedalus_labs.APIConnectionError,
             dedalus_labs.APIStatusError,
         ) as exc:
+            await _finalize_usage(tracker, usage_ctx, error=True)
             logger.error(
                 "Google streaming fallback error for model %s: %s", request.model, exc
             )
