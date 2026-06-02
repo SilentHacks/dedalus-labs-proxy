@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dedalus-labs-proxy"
-version = "0.1.0"
+version = "0.2.0"
 description = "OpenAI-compatible proxy for Dedalus Labs API"
 readme = "README.md"
 license = "MIT"
