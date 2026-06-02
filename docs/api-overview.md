@@ -100,15 +100,17 @@ When `USAGE_TRACKING=true`, the proxy records token usage and context estimates 
 : x-proxy-usage {"total_tokens":8732,"session_total_tokens":142880}
 ```
 
-Clients may also pass OpenAI-compatible `stream_options: {"include_usage": true}` to receive a usage chunk in the SSE body.
+Clients may also pass OpenAI-compatible `stream_options: {"include_usage": true}` to receive a usage chunk in the SSE body. This works even when `USAGE_TRACKING` is disabled.
+
+When `USAGE_HEADERS=true`, usage headers are added to **non-streaming** responses only. Streaming clients should use SSE comment metadata (`USAGE_SSE_METADATA=true`) or `stream_options.include_usage`.
 
 ### GET /v1/admin/usage
 
-Available when `USAGE_TRACKING=true` and `USAGE_ADMIN_ENABLED=true`. Requires a valid `PROXY_API_KEYS` bearer token. Returns in-memory aggregates (cleared on restart).
+Available when `USAGE_TRACKING=true` and `USAGE_ADMIN_ENABLED=true`. Requires a valid `USAGE_ADMIN_KEYS` bearer token (separate from client `PROXY_API_KEYS`). Returns in-memory aggregates per process (cleared on restart; not shared across workers).
 
 ### GET /v1/admin/sessions/{session_id}
 
-Session rollup and recent matching requests. Same auth and enablement requirements as `/v1/admin/usage`.
+Session rollup and recent matching requests still in the in-memory ring buffer. Same auth and enablement requirements as `/v1/admin/usage`. Session IDs must match the same format as `X-Proxy-Session-Id` (alphanumeric, `-`, `_`, max 128 chars).
 
 ### POST /v1/chat/completions
 
