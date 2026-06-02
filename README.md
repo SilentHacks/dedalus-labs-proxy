@@ -13,6 +13,7 @@ OpenAI-compatible proxy server for the [Dedalus Labs](https://www.dedaluslabs.ai
 - Google Gemini compatibility workarounds (tool schemas, thought signatures)
 - Docker and Docker Compose support
 - Configurable via environment variables or CLI flags
+- Opt-in usage tracking with token counts, context estimates, and session rollups
 
 ## Prerequisites
 
@@ -93,8 +94,46 @@ dedalus-proxy
 | `CORS_ORIGINS` | `*` | Comma-separated allowed origins, or `*` for all |
 | `DISABLE_DOCS` | `false` | Set to `true` to disable `/docs` and `/redoc` |
 | `PROXY_API_KEYS` | (unset) | Comma-separated client API keys; when set, requires `Authorization: Bearer <key>` |
+| `USAGE_TRACKING` | `false` | Enable token and context usage tracking |
+| `USAGE_LOG` | `true` | Emit structured usage log lines when tracking is enabled |
+| `USAGE_HEADERS` | `false` | Add `X-Proxy-*` usage headers to non-streaming responses |
+| `USAGE_SSE_METADATA` | `false` | Emit usage metadata as an SSE comment before `[DONE]` |
+| `USAGE_ADMIN_ENABLED` | `false` | Enable admin usage endpoints (requires `USAGE_ADMIN_KEYS`) |
+| `USAGE_ADMIN_KEYS` | (unset) | Comma-separated operator keys for admin endpoints (separate from client keys) |
+| `USAGE_STORE_MAX_RECORDS` | `1000` | In-memory usage record ring buffer size |
+| `USAGE_SESSION_TTL_SECONDS` | `86400` | Session aggregate TTL in seconds |
+| `USAGE_CHARS_PER_TOKEN` | `4` | Divisor for context size estimation |
+| `USAGE_CONTEXT_LIMITS_JSON` | (unset) | Optional JSON map of model context window overrides (parsed only when `USAGE_TRACKING=true`) |
 
 See [`.env.example`](.env.example) for a full template.
+
+## Usage Tracking
+
+Usage tracking is **disabled by default** and does not change API behavior until enabled.
+
+```bash
+export USAGE_TRACKING=true
+export USAGE_HEADERS=true          # optional: response headers
+export USAGE_SSE_METADATA=true     # optional: streaming SSE comment metadata
+export PROXY_API_KEYS=dev-key-1    # optional: client API auth
+export USAGE_ADMIN_KEYS=admin-key-1 # required when admin API is enabled
+export USAGE_ADMIN_ENABLED=true     # optional: GET /v1/admin/usage
+```
+
+Optional client headers:
+
+| Header | Description |
+|--------|-------------|
+| `X-Proxy-Session-Id` | Correlate agent turns into a session rollup (alphanumeric, `-`, `_`, max 128 chars) |
+
+When `USAGE_HEADERS=true`, non-streaming responses include headers such as `X-Proxy-Total-Tokens`, `X-Proxy-Context-Estimate`, and `X-Proxy-Session-Total-Tokens`. Context estimates are heuristic; upstream `usage.prompt_tokens` in the response body is authoritative.
+
+Admin endpoints (when enabled):
+
+- `GET /v1/admin/usage` — in-memory totals by model and client key hash
+- `GET /v1/admin/sessions/{session_id}` — session rollup and recent requests
+
+Both require a valid `USAGE_ADMIN_KEYS` bearer token (separate from `PROXY_API_KEYS`). Data is stored in-memory per process only, cleared on restart, and is not shared across multiple server workers.
 
 ### Example Request
 

@@ -57,6 +57,7 @@ def build_completion_kwargs(
     parallel_tool_calls: bool | None = None,
     reasoning_effort: str | None = None,
     verbosity: str | None = None,
+    stream_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build kwargs for the Dedalus chat completions API."""
     kwargs: dict[str, Any] = {
@@ -85,6 +86,7 @@ def build_completion_kwargs(
         "parallel_tool_calls": parallel_tool_calls,
         "reasoning_effort": reasoning_effort,
         "verbosity": verbosity,
+        "stream_options": stream_options,
     }
     kwargs.update({key: value for key, value in optional_fields.items() if value is not None})
     return kwargs
@@ -114,6 +116,7 @@ class DedalusRunner:
         parallel_tool_calls: bool | None = None,
         reasoning_effort: str | None = None,
         verbosity: str | None = None,
+        stream_options: dict[str, Any] | None = None,
     ) -> Any: ...
 
     @overload
@@ -133,6 +136,7 @@ class DedalusRunner:
         parallel_tool_calls: bool | None = None,
         reasoning_effort: str | None = None,
         verbosity: str | None = None,
+        stream_options: dict[str, Any] | None = None,
     ) -> AsyncGenerator[Any, None]: ...
 
     async def create_completion(
@@ -151,6 +155,7 @@ class DedalusRunner:
         parallel_tool_calls: bool | None = None,
         reasoning_effort: str | None = None,
         verbosity: str | None = None,
+        stream_options: dict[str, Any] | None = None,
     ) -> AsyncGenerator[Any, None] | Any:
         kwargs = build_completion_kwargs(
             model=model,
@@ -167,6 +172,7 @@ class DedalusRunner:
             parallel_tool_calls=parallel_tool_calls,
             reasoning_effort=reasoning_effort,
             verbosity=verbosity,
+            stream_options=stream_options,
         )
 
         logger.info(

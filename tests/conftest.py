@@ -86,7 +86,6 @@ class MockResponse:
 
 def create_mock_dedalus_client() -> MagicMock:
     mock_runner = MagicMock()
-    mock_runner.create_completion = AsyncMock()
     mock_client = MagicMock(spec=DedalusClient)
     mock_client.runner = mock_runner
     mock_client.verify_connection = AsyncMock(return_value=True)
@@ -96,12 +95,6 @@ def create_mock_dedalus_client() -> MagicMock:
         )
     )
     mock_client.close = AsyncMock()
-    return mock_client
-
-
-@pytest.fixture
-def mock_dedalus_client() -> MagicMock:
-    client = create_mock_dedalus_client()
 
     async def mock_create_completion(*args: Any, **kwargs: Any) -> Any:
         stream = kwargs.get("stream", False)
@@ -126,8 +119,13 @@ def mock_dedalus_client() -> MagicMock:
             return stream_gen()
         return MockResponse("Test response")
 
-    client.runner.create_completion = mock_create_completion
-    return client
+    mock_client.runner.create_completion = mock_create_completion
+    return mock_client
+
+
+@pytest.fixture
+def mock_dedalus_client() -> MagicMock:
+    return create_mock_dedalus_client()
 
 
 @pytest.fixture

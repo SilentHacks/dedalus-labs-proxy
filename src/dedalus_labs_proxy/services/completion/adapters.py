@@ -8,6 +8,7 @@ from dedalus_labs_proxy.models.responses import (
     ToolCall,
     ToolCallDelta,
 )
+from dedalus_labs_proxy.usage.models import TokenUsage
 
 
 @dataclass
@@ -65,8 +66,48 @@ def tool_call_from_sdk(tc: Any) -> ToolCall:
     )
 
 
+def usage_from_upstream(usage: Any) -> TokenUsage | None:
+    """Convert upstream usage metadata to TokenUsage."""
+    if usage is None:
+        return None
+    if not hasattr(usage, "prompt_tokens"):
+        return None
+    return TokenUsage(
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        total_tokens=usage.total_tokens,
+    )
+
+
 class ChunkAdapter:
     """Parse Dedalus SDK streaming chunks into normalized deltas."""
+
+    @staticmethod
+    def parse_usage(chunk: Any) -> TokenUsage | None:
+        """Extract usage metadata from a streaming chunk."""
+        if not hasattr(chunk, "usage"):
+            return None
+        return usage_from_upstream(chunk.usage)
+
+    @staticmethod
+    def is_usage_only_chunk(chunk: Any) -> bool:
+        """Return True when the chunk carries usage without client-visible content."""
+        usage = ChunkAdapter.parse_usage(chunk)
+        if usage is None:
+            return False
+        if not chunk.choices:
+            return True
+
+        choice = chunk.choices[0]
+        delta = getattr(choice, "delta", None)
+        if delta is None:
+            return True
+
+        has_role = bool(getattr(delta, "role", None))
+        has_content = bool(getattr(delta, "content", None))
+        has_tool_calls = bool(getattr(delta, "tool_calls", None))
+        finish_reason = getattr(choice, "finish_reason", None)
+        return not (has_role or has_content or has_tool_calls or finish_reason)
 
     @staticmethod
     def parse(chunk: Any) -> StreamDelta | None:

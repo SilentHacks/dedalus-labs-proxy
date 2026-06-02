@@ -14,8 +14,14 @@ from fastapi.responses import JSONResponse
 from dedalus_labs_proxy.auth import validate_proxy_auth
 from dedalus_labs_proxy.config import ConfigurationError, get_config, init_config
 from dedalus_labs_proxy.logging import logger, sanitize_log_data
-from dedalus_labs_proxy.routes import chat_router, health_router, models_router
+from dedalus_labs_proxy.routes import (
+    admin_usage_router,
+    chat_router,
+    health_router,
+    models_router,
+)
 from dedalus_labs_proxy.services.dedalus import create_dedalus_client
+from dedalus_labs_proxy.usage.bootstrap import ensure_usage_tracking
 
 
 def _parse_cors_origins() -> list[str]:
@@ -31,8 +37,9 @@ def _docs_disabled() -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    init_config(require_api_key=True)
+    config = init_config(require_api_key=True)
     app.state.dedalus_client = create_dedalus_client()
+    ensure_usage_tracking(app, config)
     yield
     await app.state.dedalus_client.close()
 
@@ -186,3 +193,4 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
 app.include_router(health_router)
 app.include_router(models_router)
 app.include_router(chat_router)
+app.include_router(admin_usage_router)
