@@ -226,13 +226,21 @@ def _usage_sse_metadata(
     return tracker.build_sse_metadata_comment(usage_ctx)
 
 
+def _client_requested_stream_usage(
+    stream_options: dict[str, Any] | None,
+) -> bool:
+    if not stream_options:
+        return False
+    return bool(stream_options.get("include_usage"))
+
+
 def _usage_only_sse_chunk(
     *,
     chunk: Any,
     completion_id: str,
     created: int,
     model: str,
-    usage_ctx: UsageContext | None,
+    forward_usage_to_client: bool,
 ) -> tuple[bool, TokenUsage | None, str | None]:
     """Capture usage from a usage-only chunk and optionally build SSE output."""
     if not ChunkAdapter.is_usage_only_chunk(chunk):
@@ -240,11 +248,7 @@ def _usage_only_sse_chunk(
 
     parsed_usage = ChunkAdapter.parse_usage(chunk)
     sse_chunk: str | None = None
-    if (
-        usage_ctx is not None
-        and usage_ctx.client_requested_usage_in_stream
-        and parsed_usage is not None
-    ):
+    if forward_usage_to_client and parsed_usage is not None:
         sse_chunk = format_chunk(
             ChatCompletionChunk(
                 id=completion_id,
@@ -526,7 +530,9 @@ class ChatCompletionService:
                     completion_id=completion_id,
                     created=created,
                     model=request.model,
-                    usage_ctx=usage_ctx,
+                    forward_usage_to_client=_client_requested_stream_usage(
+                        prepared.stream_options
+                    ),
                 )
                 if is_usage_only:
                     if captured is not None:

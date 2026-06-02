@@ -165,6 +165,37 @@ async def test_streaming_absorbs_usage_chunk(
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_streaming_forwards_usage_chunk_when_requested_without_tracking(
+    override_dedalus_client: Any,
+) -> None:
+    async def mock_create_completion(*args: Any, **kwargs: Any) -> Any:
+        async def stream_gen() -> AsyncGenerator[MockResponse, None]:
+            usage_response = MockResponse("", "stop")
+            usage_response.choices = []
+            usage_response.usage = MockUsage()
+            yield usage_response
+
+        return stream_gen()
+
+    override_dedalus_client.runner.create_completion = mock_create_completion
+    init_config(require_api_key=True)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        payload = {
+            "model": "openai/gpt-4",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        response = await client.post("/v1/chat/completions", json=payload)
+
+    assert response.status_code == 200
+    assert '"usage"' in response.text
+
+
 async def test_streaming_forwards_usage_chunk_when_requested(
     tracking_client: AsyncClient,
 ) -> None:
