@@ -587,6 +587,9 @@ class ChatCompletionService:
             ):
                 yield footer
 
+        except asyncio.CancelledError:
+            await _finalize_usage(tracker, usage_ctx, error=True)
+            raise
         except (
             dedalus_labs.AuthenticationError,
             dedalus_labs.APITimeoutError,
@@ -723,6 +726,9 @@ class ChatCompletionService:
             ):
                 yield footer
 
+        except asyncio.CancelledError:
+            await _finalize_usage(tracker, usage_ctx, error=True)
+            raise
         except (
             dedalus_labs.AuthenticationError,
             dedalus_labs.APITimeoutError,
