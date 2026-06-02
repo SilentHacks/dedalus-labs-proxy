@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="Dedalus Labs Proxy",
     description="OpenAI-compatible proxy for Dedalus Labs API",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
     docs_url=None if _docs_disabled() else "/docs",
     redoc_url=None if _docs_disabled() else "/redoc",
