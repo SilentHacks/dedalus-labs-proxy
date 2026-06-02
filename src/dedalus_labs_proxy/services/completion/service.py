@@ -172,7 +172,7 @@ def _extract_stream_options(request: ChatCompletionRequest) -> dict[str, Any] | 
 
 
 def _update_context_estimate(
-    usage_ctx: UsageContext, prepared: PreparedRequest, config: Config
+    usage_ctx: UsageContext, prepared: "PreparedRequest", config: Config
 ) -> None:
     usage_ctx.context_estimate_tokens = estimate_context_tokens(
         prepared.messages,
@@ -199,12 +199,66 @@ async def _finalize_usage(
     )
 
 
+async def _yield_stream_completion_footer(
+    tracker: UsageTracker | None,
+    usage_ctx: UsageContext | None,
+    *,
+    usage: TokenUsage | None,
+    finish_reason: str | None,
+) -> AsyncGenerator[str, None]:
+    await _finalize_usage(
+        tracker,
+        usage_ctx,
+        usage=usage,
+        finish_reason=finish_reason,
+    )
+    metadata = _usage_sse_metadata(tracker, usage_ctx)
+    if metadata is not None:
+        yield metadata
+    yield SSE_DONE
+
+
 def _usage_sse_metadata(
     tracker: UsageTracker | None, usage_ctx: UsageContext | None
 ) -> str | None:
     if tracker is None or usage_ctx is None:
         return None
     return tracker.build_sse_metadata_comment(usage_ctx)
+
+
+def _usage_only_sse_chunk(
+    *,
+    chunk: Any,
+    completion_id: str,
+    created: int,
+    model: str,
+    usage_ctx: UsageContext | None,
+) -> tuple[bool, TokenUsage | None, str | None]:
+    """Capture usage from a usage-only chunk and optionally build SSE output."""
+    if not ChunkAdapter.is_usage_only_chunk(chunk):
+        return False, None, None
+
+    parsed_usage = ChunkAdapter.parse_usage(chunk)
+    sse_chunk: str | None = None
+    if (
+        usage_ctx is not None
+        and usage_ctx.client_requested_usage_in_stream
+        and parsed_usage is not None
+    ):
+        sse_chunk = format_chunk(
+            ChatCompletionChunk(
+                id=completion_id,
+                created=created,
+                model=model,
+                choices=[],
+                usage=ChatCompletionUsage(
+                    prompt_tokens=parsed_usage.prompt_tokens,
+                    completion_tokens=parsed_usage.completion_tokens,
+                    total_tokens=parsed_usage.total_tokens,
+                ),
+            )
+        )
+    return True, parsed_usage, sse_chunk
 
 
 def _track_tool_call_sizes(
@@ -424,7 +478,7 @@ class ChatCompletionService:
         ):
             yield chunk
 
-    async def _stream_default(
+    async def _stream_default(  # noqa: C901
         self,
         request: ChatCompletionRequest,
         *,
@@ -467,28 +521,18 @@ class ChatCompletionService:
                     continue
 
                 chunk_count += 1
-                parsed_usage = ChunkAdapter.parse_usage(chunk)
-                if ChunkAdapter.is_usage_only_chunk(chunk):
-                    if parsed_usage is not None:
-                        captured_usage = parsed_usage
-                    if (
-                        usage_ctx is not None
-                        and usage_ctx.client_requested_usage_in_stream
-                        and parsed_usage is not None
-                    ):
-                        yield format_chunk(
-                            ChatCompletionChunk(
-                                id=completion_id,
-                                created=created,
-                                model=request.model,
-                                choices=[],
-                                usage=ChatCompletionUsage(
-                                    prompt_tokens=parsed_usage.prompt_tokens,
-                                    completion_tokens=parsed_usage.completion_tokens,
-                                    total_tokens=parsed_usage.total_tokens,
-                                ),
-                            )
-                        )
+                is_usage_only, captured, usage_sse = _usage_only_sse_chunk(
+                    chunk=chunk,
+                    completion_id=completion_id,
+                    created=created,
+                    model=request.model,
+                    usage_ctx=usage_ctx,
+                )
+                if is_usage_only:
+                    if captured is not None:
+                        captured_usage = captured
+                    if usage_sse is not None:
+                        yield usage_sse
                     continue
 
                 parsed = ChunkAdapter.parse(chunk)
@@ -529,16 +573,13 @@ class ChatCompletionService:
                     tool_call_args_size,
                 )
 
-            await _finalize_usage(
+            async for footer in _yield_stream_completion_footer(
                 tracker,
                 usage_ctx,
                 usage=captured_usage,
                 finish_reason=final_finish_reason,
-            )
-            metadata = _usage_sse_metadata(tracker, usage_ctx)
-            if metadata is not None:
-                yield metadata
-            yield SSE_DONE
+            ):
+                yield footer
 
         except (
             dedalus_labs.AuthenticationError,
@@ -551,7 +592,7 @@ class ChatCompletionService:
             async for event in stream_dedalus_errors(exc):
                 yield event
 
-    async def _stream_google_with_tools(
+    async def _stream_google_with_tools(  # noqa: C901
         self,
         request: ChatCompletionRequest,
         *,
@@ -668,16 +709,13 @@ class ChatCompletionService:
                     ],
                 )
             )
-            await _finalize_usage(
+            async for footer in _yield_stream_completion_footer(
                 tracker,
                 usage_ctx,
                 usage=usage_from_upstream(dedalus_response.usage),
                 finish_reason=finish_reason,
-            )
-            metadata = _usage_sse_metadata(tracker, usage_ctx)
-            if metadata is not None:
-                yield metadata
-            yield SSE_DONE
+            ):
+                yield footer
 
         except (
             dedalus_labs.AuthenticationError,

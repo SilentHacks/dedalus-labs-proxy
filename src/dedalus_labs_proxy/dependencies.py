@@ -4,8 +4,8 @@ from typing import cast
 
 from fastapi import Request
 
-from dedalus_labs_proxy.config import get_config
 from dedalus_labs_proxy.services.dedalus import DedalusClient
+from dedalus_labs_proxy.usage.bootstrap import ensure_usage_tracking
 from dedalus_labs_proxy.usage.models import UsageContext
 from dedalus_labs_proxy.usage.tracker import UsageTracker
 
@@ -17,6 +17,7 @@ def get_dedalus_client(request: Request) -> DedalusClient:
 
 def get_usage_tracker(request: Request) -> UsageTracker | None:
     """Return the shared usage tracker when tracking is enabled."""
+    ensure_usage_tracking(request.app)
     return getattr(request.app.state, "usage_tracker", None)
 
 

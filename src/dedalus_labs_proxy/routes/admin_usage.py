@@ -5,6 +5,8 @@ from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from dedalus_labs_proxy.config import get_config
+from dedalus_labs_proxy.usage.bootstrap import ensure_usage_tracking
 from dedalus_labs_proxy.usage.models import SessionDetail, UsageSummary
 from dedalus_labs_proxy.usage.store import UsageStore
 
@@ -13,6 +15,10 @@ router = APIRouter()
 
 def get_usage_store(request: Request) -> UsageStore:
     """Return the shared usage store from application state."""
+    config = get_config()
+    if not config.usage_admin_enabled or not config.usage_tracking:
+        raise HTTPException(status_code=404, detail="Not found")
+    ensure_usage_tracking(request.app)
     store = getattr(request.app.state, "usage_store", None)
     if store is None:
         raise HTTPException(status_code=503, detail="Usage tracking is not enabled")

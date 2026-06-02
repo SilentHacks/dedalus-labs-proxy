@@ -1,7 +1,6 @@
 """In-memory usage record store."""
 
 import asyncio
-import time
 from collections import deque
 
 from dedalus_labs_proxy.usage.models import (
